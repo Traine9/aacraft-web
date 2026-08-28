@@ -1,0 +1,21 @@
+{
+  "name": "aacraft-web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "ArcheAge craft calculator — single static page",
+  "scripts": {
+    "data": "node tools/build-data.mjs",
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^26.4.0",
+    "typescript": "^7.0.2",
+    "vite": "^8.2.2",
+    "vitest": "^4.1.11"
+  }
+}
