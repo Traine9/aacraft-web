@@ -6,8 +6,138 @@
     <title>AACraft — Craft Calculator</title>
   </head>
   <body>
-    <!-- Placeholder shell. The real UI is built in a later phase (see SPEC.md "UI"). -->
-    <div id="app">AACraft calculator — UI not built yet.</div>
+    <div id="app">
+      <header class="topbar">
+        <div class="topbar-head">
+          <h1>AACraft <span class="sub">craft calculator</span></h1>
+          <span class="stamp">AH data: <b id="updated" data-testid="updated-stamp">…</b></span>
+        </div>
+
+        <div class="controls">
+          <div class="field field-search">
+            <label for="search">Item</label>
+            <input
+              id="search"
+              type="text"
+              autocomplete="off"
+              spellcheck="false"
+              role="combobox"
+              aria-expanded="false"
+              aria-autocomplete="list"
+              placeholder="Search craftable items…"
+              data-testid="search-input"
+            />
+            <div id="search-popup" class="popup" role="listbox" data-testid="search-popup" hidden></div>
+          </div>
+
+          <div class="field field-qty">
+            <label for="qty">Quantity</label>
+            <input id="qty" type="number" min="1" step="1" value="1" data-testid="qty-input" />
+          </div>
+
+          <div class="field field-gpl">
+            <label for="gold-per-labor">Gold per labor</label>
+            <input
+              id="gold-per-labor"
+              type="number"
+              min="0"
+              step="0.05"
+              value="0.3"
+              data-testid="gold-per-labor-input"
+            />
+          </div>
+
+          <div class="field field-check">
+            <label>
+              <input id="prof" type="checkbox" checked data-testid="prof-checkbox" />
+              <span>Max proficiency (−30% labor)</span>
+            </label>
+          </div>
+        </div>
+
+        <p class="hint" data-testid="gold-per-labor-hint">
+          If the AH price is below the craft cost at this labor value, the AH price is used
+        </p>
+
+        <div class="presets" id="presets" data-testid="presets"></div>
+      </header>
+
+      <p class="note" data-testid="rng-note">
+        No RNG: multi-outcome crafts are counted as one craft = one result.
+      </p>
+
+      <p id="status" class="status" data-testid="status">Loading data…</p>
+
+      <main id="results" class="results" data-testid="results" hidden>
+        <h2 class="target-line" id="target-line" data-testid="target-line"></h2>
+
+        <div class="panels">
+          <section class="panel panel-tree">
+            <div class="panel-head">
+              <h3>Craft steps</h3>
+              <div class="panel-actions">
+                <button type="button" id="expand-all" class="ghost" data-testid="tree-expand-all">
+                  Expand all
+                </button>
+                <button type="button" id="collapse-all" class="ghost" data-testid="tree-collapse-all">
+                  Collapse all
+                </button>
+              </div>
+            </div>
+            <div id="tree" class="tree" data-testid="tree"></div>
+          </section>
+
+          <section class="panel panel-buy">
+            <div class="panel-head">
+              <h3>Buy list</h3>
+              <input
+                id="filter"
+                type="search"
+                class="filter"
+                autocomplete="off"
+                placeholder="Filter items…"
+                aria-label="Filter buy list"
+                data-testid="buy-filter"
+              />
+            </div>
+
+            <table class="buy-table" data-testid="buy-list">
+              <thead>
+                <tr>
+                  <th scope="col">Item</th>
+                  <th scope="col" class="num">Qty</th>
+                  <th scope="col" class="num">Unit price</th>
+                  <th scope="col" class="num">Total</th>
+                </tr>
+              </thead>
+              <tbody id="buy-body" data-testid="buy-body"></tbody>
+              <tfoot data-testid="totals">
+                <tr>
+                  <th scope="row" colspan="3">Buy gold</th>
+                  <td class="num" id="total-buy" data-testid="total-buy-gold"></td>
+                </tr>
+                <tr>
+                  <th scope="row" colspan="3">Crafting fees</th>
+                  <td class="num" id="total-fees" data-testid="total-fees"></td>
+                </tr>
+                <tr>
+                  <th scope="row" colspan="3">Labor (points)</th>
+                  <td class="num" id="total-labor" data-testid="total-labor"></td>
+                </tr>
+                <tr>
+                  <th scope="row" colspan="3">Labor → gold</th>
+                  <td class="num" id="total-labor-gold" data-testid="total-labor-gold"></td>
+                </tr>
+                <tr class="grand">
+                  <th scope="row" colspan="3">Grand total</th>
+                  <td class="num" id="total-grand" data-testid="total-grand"></td>
+                </tr>
+              </tfoot>
+            </table>
+          </section>
+        </div>
+      </main>
+    </div>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>
