@@ -9,7 +9,7 @@ export interface SearchItem {
 }
 
 /** Longest popup the SPEC allows; also the only cap the matcher needs. */
-const MAX_ROWS = 50;
+export const MAX_ROWS = 50;
 
 /** Every item that at least one recipe produces, sorted by name — the only searchable set. */
 export function buildSearchItems(index: CraftIndex): SearchItem[] {

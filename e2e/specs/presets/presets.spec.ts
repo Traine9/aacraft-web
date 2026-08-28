@@ -8,11 +8,12 @@
  */
 import { test, expect } from '@lib/fixtures';
 import { expectGold } from '@lib/numbers';
-import { expected, mainPreset } from '@lib/oracle';
+import { expected, mainPreset, mainPresetInputs } from '@lib/oracle';
+
+const preset = mainPreset();
+const base = mainPresetInputs();
 
 test.describe('presets', () => {
-  const preset = mainPreset();
-
   test('the preset fills target and quantity from its own data attributes', async ({ calc }) => {
     await calc.goto();
 
@@ -32,22 +33,24 @@ test.describe('presets', () => {
   });
 
   test('the buy list and totals reproduce the engine for the preset inputs', async ({ calc }) => {
-    const want = expected({ target: preset.itemId, qty: preset.qty });
+    const want = expected(base);
     expect(want.error, 'the preset target must be craftable').toBeUndefined();
     expect(want.buyList.length, 'the preset must produce a non-empty buy list').toBeGreaterThan(0);
 
-    await calc.goto();
-    await calc.clickPreset(preset.itemId);
+    await calc.openWithPreset(preset.itemId);
 
-    // Same rows, same order (buy list is sorted by total desc).
+    // Gate first (auto-waiting), then read every row in one go and compare the lot in Node.
     await expect(calc.visibleBuyRows).toHaveCount(want.buyList.length);
-    expect(await calc.visibleBuyRowIds()).toEqual(want.buyList.map((row) => row.itemId));
+    const rows = await calc.visibleBuyRowCells();
 
-    // Every row: quantity is exact, the money is compared inside the display rounding.
-    for (const row of want.buyList) {
-      await expect(calc.rowQty(row.itemId)).toHaveText(row.qty.toLocaleString('en-US'));
-      expectGold(await calc.rowTotalValue(row.itemId), row.total, `row total for ${row.name}`);
-    }
+    // Same rows, same order (buy list is sorted by total desc), same quantities.
+    expect(rows.map((row) => row.itemId)).toEqual(want.buyList.map((row) => row.itemId));
+    expect(rows.map((row) => row.qty)).toEqual(want.buyList.map((row) => row.qty));
+    // The money is compared inside the display rounding.
+    rows.forEach((row, i) => {
+      const wantRow = want.buyList[i]!;
+      expectGold(row.total, wantRow.total, `row total for ${wantRow.name}`);
+    });
 
     const totals = await calc.totals();
     expect(totals.labor, 'labor points are an integer count').toBe(want.totals.labor);
@@ -58,21 +61,21 @@ test.describe('presets', () => {
   });
 
   test('the craft tree opens on the target and its direct sub-crafts', async ({ calc }) => {
-    const want = expected({ target: preset.itemId, qty: preset.qty });
+    const want = expected(base);
 
-    await calc.goto();
-    await calc.clickPreset(preset.itemId);
+    await calc.openWithPreset(preset.itemId);
 
     // SPEC: the target is always crafted, whatever the auction house says it costs.
-    await expect(calc.treeNode(preset.itemId)).toHaveAttribute('data-mode', 'craft');
+    await expect(calc.treeNodeInMode(preset.itemId, 'craft')).toBeVisible();
     for (const child of want.tree.children ?? []) {
-      await expect(calc.treeNode(child.itemId)).toHaveAttribute('data-mode', child.mode);
+      await expect(calc.treeNodeInMode(child.itemId, child.mode)).toBeVisible();
     }
 
     // Collapse/expand are view-only: the totals must not move.
     const before = await calc.totals();
     await calc.collapseAll();
-    await expect(calc.treeNodes).toHaveCount(1); // only the root survives a full collapse
+    // Collapsing REMOVES nodes (it is not a hide), so the target is all that is left.
+    expect(await calc.renderedTreeNodeIds()).toEqual([preset.itemId]);
     await calc.expandAll();
     expect(await calc.totals()).toEqual(before);
   });

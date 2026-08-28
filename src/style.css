@@ -428,7 +428,8 @@ button {
   color: var(--warn);
 }
 
-.badge-override {
+.badge-price-override,
+.badge-mode-forced {
   color: var(--accent);
 }
 

@@ -8,6 +8,8 @@
  *
  * Consequence — and the reason it is worth the import: no spec hardcodes a gold amount, a labor
  * total or a row count. Regenerate `data.json` from a fresh AH dump and the suite still passes.
+ * Every runtime SUBJECT (which row to re-price, which node to force, which labor price flips a
+ * decision) is picked here too, so a spec never names an item id either.
  */
 import { readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
@@ -25,6 +27,7 @@ import {
   type TreeNode,
 } from '../../src/engine';
 import { PRESETS, type Preset } from '../../src/presets';
+import { MAX_ROWS } from '../../src/ui/search';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 
@@ -53,10 +56,29 @@ export function mainPreset(): Preset {
   return preset;
 }
 
+/** The engine inputs that main preset stands for — what every preset-driven spec calculates from. */
+export function mainPresetInputs(): { target: number; qty: number } {
+  const preset = mainPreset();
+  return { target: preset.itemId, qty: preset.qty };
+}
+
+// ------------------------------------------------------------------------------ engine runs
+
+/** The gold-per-labor default baked into `index.html`; `boot.spec` pins the markup to it. */
+export const UI_GOLD_PER_LABOR = 0.3;
+
+/** `CalcOptions` with the one control the markup gives a default made optional. */
+export type EngineInputs = Omit<CalcOptions, 'goldPerLabor'> & { goldPerLabor?: number };
+
+/** Run the engine exactly as `main.ts` does, filling in the page's default labor price. */
+export function expected(opts: EngineInputs): CalcResult {
+  return calculate(craftIndex(), { goldPerLabor: UI_GOLD_PER_LABOR, ...opts });
+}
+
 // --------------------------------------------------------------------------- runtime subjects
 
-/** Longest popup `src/ui/search.ts` will ever render. */
-export const SEARCH_MAX_ROWS = 50;
+/** Longest popup `src/ui/search.ts` will ever render — the module's own cap, not a copy of it. */
+export const SEARCH_MAX_ROWS = MAX_ROWS;
 
 export interface SearchHit {
   id: number;
@@ -97,23 +119,37 @@ export function discriminatingTerm(names: readonly string[]): string | null {
   return null;
 }
 
-/** The engine inputs the UI starts from: the defaults baked into `index.html`. */
-export const UI_DEFAULTS = { goldPerLabor: 0.3, profReduction: true } as const;
+/** An item the UI can point at, named so a failure message says which one it picked. */
+export interface Subject {
+  itemId: number;
+  name: string;
+}
 
-/** `CalcOptions` with the two controls that have a default in the markup made optional. */
-export type EngineInputs = Omit<CalcOptions, 'goldPerLabor'>;
+/**
+ * First buy row with a real auction-house price — a `no price` row has nothing to re-price.
+ * Throws (like `mainPreset`) rather than returning null: a breakdown without one leaves the price
+ * spec no subject at all, and that is a broken fixture, not a failed expectation.
+ */
+export function firstPricedBuyRow(base: EngineInputs): Subject {
+  const row = expected(base).buyList.find((r) => !r.noPrice && r.unitPrice > 0);
+  if (!row) throw new Error('no priced buy row in this breakdown — the price spec has no subject');
+  return { itemId: row.itemId, name: row.name };
+}
 
-/** Run the engine exactly as `main.ts` does, filling in the page's default controls. */
-export function expected(opts: EngineInputs & { goldPerLabor?: number }): CalcResult {
-  return calculate(craftIndex(), {
-    goldPerLabor: UI_DEFAULTS.goldPerLabor,
-    profReduction: UI_DEFAULTS.profReduction,
-    ...opts,
-  });
+/**
+ * A crafted, priced sub-craft directly under the target: forcing it to buy must move it (and drop
+ * its materials) from the tree into the buy list.
+ */
+export function firstForcibleSubCraft(base: EngineInputs): Subject {
+  const child = (expected(base).tree.children ?? []).find(
+    (node) => node.mode === 'craft' && node.unitPrice !== null,
+  );
+  if (!child) throw new Error('no priced sub-craft under the target — the force spec has no subject');
+  return { itemId: child.itemId, name: child.name };
 }
 
 /** Depth-first walk of a decision tree, parents before children (i.e. DOM order). */
-export function walkTree(node: TreeNode, visit: (node: TreeNode, depth: number) => void): void {
+function walkTree(node: TreeNode, visit: (node: TreeNode, depth: number) => void): void {
   const go = (n: TreeNode, depth: number): void => {
     visit(n, depth);
     for (const child of n.children ?? []) go(child, depth + 1);
@@ -122,7 +158,7 @@ export function walkTree(node: TreeNode, visit: (node: TreeNode, depth: number) 
 }
 
 /** `itemId -> mode`, first (shallowest) occurrence wins — the mode is decided per item, not per branch. */
-export function modesByItem(result: CalcResult): Map<number, Mode> {
+function modesByItem(result: CalcResult): Map<number, Mode> {
   const modes = new Map<number, Mode>();
   walkTree(result.tree, (node) => {
     if (!modes.has(node.itemId)) modes.set(node.itemId, node.mode);
@@ -130,20 +166,17 @@ export function modesByItem(result: CalcResult): Map<number, Mode> {
   return modes;
 }
 
+/** Labor prices to try, cheapest first: the flip search takes the first one that flips a node. */
+const HIGHER_GPL = [0.5, 1, 2, 5, 10];
+
 /**
- * The shallowest item that is crafted at `low` gold-per-labor and bought at `high` — the subject of
- * the craft→buy flip spec, picked from the data instead of hardcoded.
+ * The shallowest item that is crafted at the page default gold-per-labor and bought at `high`.
  *
  * It is chosen from the HIGH tree, so the node is guaranteed to still be rendered after the flip
  * (an item whose parent also flipped disappears from the tree entirely and cannot be asserted on).
  */
-export function findFlip(
-  base: EngineInputs,
-  low: number,
-  high: number,
-): { itemId: number; name: string } | null {
-  const lowModes = modesByItem(expected({ ...base, goldPerLabor: low }));
-  const candidates: Array<{ itemId: number; name: string; depth: number }> = [];
+function findFlip(base: EngineInputs, lowModes: Map<number, Mode>, high: number): Subject | null {
+  const candidates: Array<Subject & { depth: number }> = [];
   walkTree(expected({ ...base, goldPerLabor: high }).tree, (node, depth) => {
     if (node.mode !== 'buy' || lowModes.get(node.itemId) !== 'craft') return;
     candidates.push({ itemId: node.itemId, name: node.name, depth });
@@ -151,4 +184,17 @@ export function findFlip(
   candidates.sort((a, b) => a.depth - b.depth || a.itemId - b.itemId);
   const best = candidates[0];
   return best ? { itemId: best.itemId, name: best.name } : null;
+}
+
+/**
+ * The cheapest labor price in `HIGHER_GPL` that flips some node of `base` from craft to buy, and
+ * the shallowest node it flips. The default-gpl tree is computed once, whatever the ladder costs.
+ */
+export function findFlipAtSomeGpl(base: EngineInputs): { gpl: number; flip: Subject } | null {
+  const lowModes = modesByItem(expected({ ...base, goldPerLabor: UI_GOLD_PER_LABOR }));
+  for (const gpl of HIGHER_GPL) {
+    const flip = findFlip(base, lowModes, gpl);
+    if (flip) return { gpl, flip };
+  }
+  return null;
 }

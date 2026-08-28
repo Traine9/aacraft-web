@@ -6,7 +6,7 @@
  * the results panel. Nothing else happens until the user acts.
  */
 import { test, expect } from '@lib/fixtures';
-import { updatedStamp } from '@lib/oracle';
+import { updatedStamp, UI_GOLD_PER_LABOR } from '@lib/oracle';
 
 test.describe('page load', () => {
   test('boots into the empty state with the data stamp and the no-RNG note', async ({ calc }) => {
@@ -15,6 +15,10 @@ test.describe('page load', () => {
     // The stamp is the `updated` field of the very data.json the suite uses as its oracle.
     await expect(calc.updatedStamp).toHaveText(updatedStamp());
     await expect(calc.updatedStamp).toHaveText(/^\d{4}-\d{2}-\d{2}$/);
+
+    // The whole oracle runs at this labor price: if the markup's default ever moves, every
+    // "expected" number in the suite would be computed for inputs the page does not have.
+    await expect(calc.goldPerLaborInput).toHaveValue(String(UI_GOLD_PER_LABOR));
 
     // SPEC: the page must always carry the "one craft = one result" note.
     await expect(calc.rngNote).toBeVisible();
@@ -30,19 +34,15 @@ test.describe('page load', () => {
   });
 
   test('fetches data.json exactly once, and serves it from the built bundle', async ({ calc, page }) => {
-    const requests: string[] = [];
+    // index.html preloads data.json and boot() fetches it; the preload must be reused, not doubled.
+    // One entry, and it is a 200 — a second response would mean the preload was wasted.
     const statuses: number[] = [];
-    page.on('request', (req) => {
-      if (req.url().endsWith('data.json')) requests.push(req.url());
-    });
-    page.on('response', async (res) => {
+    page.on('response', (res) => {
       if (res.url().endsWith('data.json')) statuses.push(res.status());
     });
 
     await calc.goto();
 
-    // index.html preloads data.json and boot() fetches it; the preload must be reused, not doubled.
-    expect(requests, `data.json requests: ${requests.join(', ')}`).toHaveLength(1);
-    expect(statuses).toEqual([200]);
+    expect(statuses, 'one 200 response for data.json').toEqual([200]);
   });
 });

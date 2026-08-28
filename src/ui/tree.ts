@@ -68,8 +68,9 @@ function nodeEl(node: TreeNode, expandedIds: ReadonlySet<number>, depth: number)
   // matters where a missing price understates the bill — on a bought node.
   if (node.noPrice && node.mode === 'buy') row.appendChild(badge('noprice', 'no price'));
   if (node.cycleBroken) row.appendChild(badge('cycle', 'cycle → buy'));
-  if (node.priceOverridden) row.appendChild(badge('override', 'price set'));
-  if (node.modeOverridden) row.appendChild(badge('override', 'forced'));
+  // Two independent overrides: a node can carry both, so they are two distinct badge kinds.
+  if (node.priceOverridden) row.appendChild(badge('price-override', 'price set'));
+  if (node.modeOverridden) row.appendChild(badge('mode-forced', 'forced'));
 
   // The target (depth 0) is always crafted (SPEC), and an item with no recipe can only be bought.
   if (depth > 0 && node.craftable) {

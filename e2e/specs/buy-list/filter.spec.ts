@@ -9,19 +9,19 @@
  * preset's rows, so the spec survives a regenerated data.json.
  */
 import { test, expect } from '@lib/fixtures';
-import { discriminatingTerm, expected, mainPreset } from '@lib/oracle';
+import { discriminatingTerm, expected, mainPreset, mainPresetInputs } from '@lib/oracle';
 
 const preset = mainPreset();
+const base = mainPresetInputs();
 const NO_MATCH = 'zzz-no-such-item';
 
 test.describe('buy list — filter', () => {
   test.beforeEach(async ({ calc }) => {
-    await calc.goto();
-    await calc.clickPreset(preset.itemId);
+    await calc.openWithPreset(preset.itemId);
   });
 
   test('filters rows down to the matches and leaves the totals alone', async ({ calc }) => {
-    const rows = expected({ target: preset.itemId, qty: preset.qty }).buyList;
+    const rows = expected(base).buyList;
     const term = discriminatingTerm(rows.map((row) => row.name));
     expect(term, 'the preset buy list must contain a partially matching word').not.toBeNull();
 

@@ -11,6 +11,8 @@ import { SEARCH_MAX_ROWS, searchHits } from '@lib/oracle';
 
 /** Deliberately broad: more matches than the popup may show, so the cap is exercised. */
 const QUERY = 'typhoon';
+/** What the popup must list for `QUERY`, uncapped and in ranking order. */
+const HITS = searchHits(QUERY);
 
 test.describe('item search popup', () => {
   test.beforeEach(async ({ calc }) => {
@@ -18,8 +20,7 @@ test.describe('item search popup', () => {
   });
 
   test('lists the matching items, capped, with the best match highlighted', async ({ calc }) => {
-    const hits = searchHits(QUERY);
-    expect(hits.length, `the fixture query "${QUERY}" must over-fill the popup`).toBeGreaterThan(
+    expect(HITS.length, `the fixture query "${QUERY}" must over-fill the popup`).toBeGreaterThan(
       SEARCH_MAX_ROWS,
     );
 
@@ -30,16 +31,15 @@ test.describe('item search popup', () => {
     const shown = await calc.searchOptions.evaluateAll((rows) =>
       rows.map((row) => Number((row as HTMLElement).dataset['itemId'])),
     );
-    expect(shown).toEqual(hits.slice(0, SEARCH_MAX_ROWS).map((hit) => hit.id));
+    expect(shown).toEqual(HITS.slice(0, SEARCH_MAX_ROWS).map((hit) => hit.id));
 
     // The first row is pre-selected, so Enter always has something to pick.
     await expect(calc.activeOption).toHaveCount(1);
-    expect(await calc.activeOptionId()).toBe(hits[0]?.id);
+    expect(await calc.activeOptionId()).toBe(HITS[0]?.id);
   });
 
   test('arrow keys move the highlight and Enter picks the highlighted item', async ({ calc }) => {
-    const hits = searchHits(QUERY);
-    const third = hits[2];
+    const third = HITS[2];
     expect(third, 'the query needs at least three matches to arrow through').toBeDefined();
 
     await calc.searchFor(QUERY);
@@ -69,8 +69,7 @@ test.describe('item search popup', () => {
   });
 
   test('clicking an option selects that item', async ({ calc }) => {
-    const hits = searchHits(QUERY);
-    const pick = hits[1];
+    const pick = HITS[1];
     expect(pick, 'the query needs at least two matches').toBeDefined();
 
     await calc.searchFor(QUERY);
@@ -83,7 +82,9 @@ test.describe('item search popup', () => {
   });
 
   test('a query nothing matches leaves the popup closed', async ({ calc }) => {
-    await calc.searchInput.fill('zzz-no-such-item');
+    // No popup to wait for — that is the assertion.
+    await calc.typeInSearch('zzz-no-such-item');
+
     await expect(calc.searchPopup).toBeHidden();
     await expect(calc.searchOptions).toHaveCount(0);
   });
