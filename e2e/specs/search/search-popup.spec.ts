@@ -1,0 +1,90 @@
+/**
+ * search-popup.spec.ts — the item search combobox (`src/ui/search.ts`).
+ *
+ * Oracle: `searchHits()` reimplements the matcher (substring over craftable item names, earliest hit
+ * first) from the same data.json the page loads, so the expected rows and their order are computed,
+ * never hardcoded. The query below is chosen only because it over-fills the popup — the spec asserts
+ * the cap and the ranking against the oracle, not a row count it knows in advance.
+ */
+import { test, expect } from '@lib/fixtures';
+import { SEARCH_MAX_ROWS, searchHits } from '@lib/oracle';
+
+/** Deliberately broad: more matches than the popup may show, so the cap is exercised. */
+const QUERY = 'typhoon';
+
+test.describe('item search popup', () => {
+  test.beforeEach(async ({ calc }) => {
+    await calc.goto();
+  });
+
+  test('lists the matching items, capped, with the best match highlighted', async ({ calc }) => {
+    const hits = searchHits(QUERY);
+    expect(hits.length, `the fixture query "${QUERY}" must over-fill the popup`).toBeGreaterThan(
+      SEARCH_MAX_ROWS,
+    );
+
+    await calc.searchFor(QUERY);
+
+    await expect(calc.searchOptions).toHaveCount(SEARCH_MAX_ROWS);
+    // Ranking: the popup shows the oracle's top rows, in the oracle's order.
+    const shown = await calc.searchOptions.evaluateAll((rows) =>
+      rows.map((row) => Number((row as HTMLElement).dataset['itemId'])),
+    );
+    expect(shown).toEqual(hits.slice(0, SEARCH_MAX_ROWS).map((hit) => hit.id));
+
+    // The first row is pre-selected, so Enter always has something to pick.
+    await expect(calc.activeOption).toHaveCount(1);
+    expect(await calc.activeOptionId()).toBe(hits[0]?.id);
+  });
+
+  test('arrow keys move the highlight and Enter picks the highlighted item', async ({ calc }) => {
+    const hits = searchHits(QUERY);
+    const third = hits[2];
+    expect(third, 'the query needs at least three matches to arrow through').toBeDefined();
+
+    await calc.searchFor(QUERY);
+    await calc.pressInSearch('ArrowDown');
+    await calc.pressInSearch('ArrowDown');
+    expect(await calc.activeOptionId()).toBe(third?.id);
+
+    await calc.pressInSearch('Enter');
+
+    // Picking closes the popup, fills the input and renders that item's breakdown.
+    await expect(calc.searchPopup).toBeHidden();
+    await expect(calc.searchInput).toHaveValue(third?.name ?? '');
+    await expect(calc.results).toBeVisible();
+    await expect(calc.targetLine).toContainText(`#${third?.id}`);
+    await expect(calc.status).toBeHidden();
+  });
+
+  test('Escape closes the popup and picks nothing', async ({ calc }) => {
+    await calc.searchFor(QUERY);
+    await calc.pressInSearch('Escape');
+
+    await expect(calc.searchPopup).toBeHidden();
+    // The typed text stays, but no target was chosen: still the empty state.
+    await expect(calc.searchInput).toHaveValue(QUERY);
+    await expect(calc.results).toBeHidden();
+    await expect(calc.status).toBeVisible();
+  });
+
+  test('clicking an option selects that item', async ({ calc }) => {
+    const hits = searchHits(QUERY);
+    const pick = hits[1];
+    expect(pick, 'the query needs at least two matches').toBeDefined();
+
+    await calc.searchFor(QUERY);
+    await calc.searchOption(pick!.id).click();
+
+    await expect(calc.searchPopup).toBeHidden();
+    await expect(calc.searchInput).toHaveValue(pick!.name);
+    await expect(calc.targetLine).toContainText(`#${pick!.id}`);
+    await expect(calc.results).toBeVisible();
+  });
+
+  test('a query nothing matches leaves the popup closed', async ({ calc }) => {
+    await calc.searchInput.fill('zzz-no-such-item');
+    await expect(calc.searchPopup).toBeHidden();
+    await expect(calc.searchOptions).toHaveCount(0);
+  });
+});
