@@ -140,12 +140,14 @@ export interface CraftIndex {
   recipeById: ReadonlyMap<number, Recipe>;
   /** Recipes keyed by the item they produce, sorted by (labor per output unit, id). */
   recipesByProduct: ReadonlyMap<number, Recipe[]>;
+  /** `data.items` keyed by numeric id, so lookups need no per-call `String(id)`. */
+  entryById: ReadonlyMap<number, ItemEntry>;
 }
 
 /** Cheaper of two recipes for the same item: lowest labor per output unit, ties → lowest id. */
 function compareRecipes(a: Recipe, b: Recipe): number {
-  const la = a.labor / Math.max(1, a.out[1]);
-  const lb = b.labor / Math.max(1, b.out[1]);
+  const la = a.labor / outAmount(a);
+  const lb = b.labor / outAmount(b);
   if (la !== lb) return la - lb;
   return a.id - b.id;
 }
@@ -160,15 +162,20 @@ export function buildIndex(data: DataSet): CraftIndex {
     else recipesByProduct.set(r.out[0], [r]);
   }
   for (const list of recipesByProduct.values()) list.sort(compareRecipes);
-  return { data, recipeById, recipesByProduct };
+  const entryById = new Map<number, ItemEntry>();
+  for (const [id, entry] of Object.entries(data.items)) {
+    const n = Number(id);
+    if (Number.isFinite(n)) entryById.set(n, entry);
+  }
+  return { data, recipeById, recipesByProduct, entryById };
 }
 
 export function itemName(index: CraftIndex, itemId: number): string {
-  return index.data.items[String(itemId)]?.[0] ?? `Item ${itemId}`;
+  return index.entryById.get(itemId)?.[0] ?? `Item ${itemId}`;
 }
 
 export function itemPrice(index: CraftIndex, itemId: number): number | null {
-  return index.data.items[String(itemId)]?.[1] ?? null;
+  return index.entryById.get(itemId)?.[1] ?? null;
 }
 
 /** Effective labor for one craft. `ceil(labor * 0.7)`, computed as `ceil(labor * 7 / 10)` so that
@@ -178,10 +185,19 @@ export function effectiveLabor(labor: number, profReduction: boolean): number {
   return Math.ceil((labor * 7) / 10);
 }
 
+/** Units produced by one craft (a recipe never yields less than one). */
+function outAmount(r: Recipe): number {
+  return Math.max(1, r.out[1]);
+}
+
+/** Whole crafts needed to obtain `units` output units — surplus is fine, fractions are not. */
+function craftsFor(r: Recipe, units: number): number {
+  return ceilQty(units / outAmount(r));
+}
+
 // ------------------------------------------------------------------- resolving
 
 interface Resolved {
-  itemId: number;
   mode: Mode;
   /** Gold cost of obtaining one unit under the chosen mode. */
   unitCost: number;
@@ -196,7 +212,8 @@ interface Resolved {
 
 class Calculator {
   private readonly index: CraftIndex;
-  private readonly goldPerLabor: number;
+  /** Sanitized once here; `calculate` reuses it for the labor→gold total. */
+  readonly goldPerLabor: number;
   private readonly profReduction: boolean;
   private readonly priceOverride: Readonly<Record<number, number>>;
   private readonly modeOverride: Readonly<Record<number, Mode>>;
@@ -236,15 +253,13 @@ class Calculator {
     return effectiveLabor(recipe.labor, this.profReduction);
   }
 
-  private buyOnly(itemId: number, recipe: Recipe | null, modeOverridden: boolean): Resolved {
-    const { price, overridden } = this.price(itemId);
+  private buyOnly(price: number | null, overridden: boolean, modeOverridden: boolean): Resolved {
     return {
-      itemId,
       mode: 'buy',
       unitCost: price ?? 0,
       unitPrice: price,
       craftUnitCost: null,
-      recipe,
+      recipe: null,
       noPrice: price === null,
       priceOverridden: overridden,
       modeOverridden,
@@ -259,14 +274,18 @@ class Calculator {
   resolve(itemId: number): Resolved {
     const hit = this.memo.get(itemId);
     if (hit) return hit;
-    if (this.resolving.has(itemId)) return this.buyOnly(itemId, null, false);
+    if (this.resolving.has(itemId)) {
+      const cyclic = this.price(itemId);
+      return this.buyOnly(cyclic.price, cyclic.overridden, false);
+    }
 
-    const forced = this.modeOverride[itemId];
     const recipe = this.recipeFor(itemId);
+    // A mode override on an item with no recipe means nothing — it can only ever be bought.
+    const forced = recipe ? this.modeOverride?.[itemId] : undefined;
     const { price, overridden } = this.price(itemId);
 
     if (!recipe || forced === 'buy') {
-      const res = this.buyOnly(itemId, recipe, forced === 'buy' && recipe !== null);
+      const res = this.buyOnly(price, overridden, forced !== undefined);
       this.memo.set(itemId, res);
       return res;
     }
@@ -276,15 +295,13 @@ class Calculator {
     for (const [matId, amount] of recipe.mats) matCost += this.resolve(matId).unitCost * amount;
     this.resolving.delete(itemId);
 
-    const outAmount = Math.max(1, recipe.out[1]);
     const craftUnitCost =
-      (matCost + recipe.fee + this.labor(recipe) * this.goldPerLabor) / outAmount;
+      (matCost + recipe.fee + this.labor(recipe) * this.goldPerLabor) / outAmount(recipe);
 
     // Craft only when strictly cheaper than buying. No price at all => nothing to buy => craft.
     const craft = forced === 'craft' || price === null || craftUnitCost < price;
 
     const res: Resolved = {
-      itemId,
       mode: craft ? 'craft' : 'buy',
       unitCost: craft ? craftUnitCost : price,
       unitPrice: price,
@@ -302,7 +319,6 @@ class Calculator {
 // ------------------------------------------------------------------ expansion
 
 interface CraftNode {
-  itemId: number;
   recipe: Recipe;
   /** Material ids on this recipe that must be bought here because they close a cycle. */
   cycleBroken: Set<number>;
@@ -324,7 +340,6 @@ function ceilQty(n: number): number {
 export function calculate(index: CraftIndex, opts: CalcOptions): CalcResult {
   const calc = new Calculator(index, opts);
   const qty = Number.isFinite(opts.qty) && opts.qty > 0 ? opts.qty : 0;
-  const goldPerLabor = Number.isFinite(opts.goldPerLabor) ? opts.goldPerLabor : 0;
 
   const targetRecipe = calc.recipeFor(opts.target);
 
@@ -339,7 +354,7 @@ export function calculate(index: CraftIndex, opts: CalcOptions): CalcResult {
     const recipe = isTarget ? targetRecipe : res.mode === 'craft' ? res.recipe : null;
     if (!recipe) return;
 
-    const node: CraftNode = { itemId, recipe, cycleBroken: new Set() };
+    const node: CraftNode = { recipe, cycleBroken: new Set() };
     craftNodes.set(itemId, node);
     path.add(itemId);
     for (const [matId] of recipe.mats) {
@@ -368,23 +383,25 @@ export function calculate(index: CraftIndex, opts: CalcOptions): CalcResult {
     return out;
   };
 
-  for (const node of craftNodes.values()) {
-    for (const matId of craftDeps(node)) consumers.set(matId, (consumers.get(matId) ?? 0) + 1);
+  // Materialized once: the Kahn loops below walk the same edges twice.
+  const deps = new Map<number, number[]>();
+  for (const [id, node] of craftNodes) deps.set(id, craftDeps(node));
+
+  for (const list of deps.values()) {
+    for (const matId of list) consumers.set(matId, (consumers.get(matId) ?? 0) + 1);
   }
   const queue: number[] = [];
   for (const [id, deg] of consumers) if (deg === 0) queue.push(id);
   queue.sort((a, b) => a - b); // deterministic tie-breaking
 
   const order: number[] = [];
-  const ordered = new Set<number>();
   let cursor = 0;
   while (cursor < queue.length) {
     const id = queue[cursor++] as number;
     order.push(id);
-    ordered.add(id);
-    const node = craftNodes.get(id);
-    if (!node) continue;
-    for (const matId of craftDeps(node)) {
+    const list = deps.get(id);
+    if (!list) continue;
+    for (const matId of list) {
       const deg = (consumers.get(matId) ?? 0) - 1;
       consumers.set(matId, deg);
       if (deg === 0) queue.push(matId);
@@ -393,6 +410,7 @@ export function calculate(index: CraftIndex, opts: CalcOptions): CalcResult {
   // Defensive: pass 1 removes every back edge, so the remaining graph is a DAG and this is dead
   // code. Kept so a future change cannot silently drop demand.
   if (order.length < craftNodes.size) {
+    const ordered = new Set(order);
     for (const id of craftNodes.keys()) if (!ordered.has(id)) order.push(id);
   }
 
@@ -410,8 +428,8 @@ export function calculate(index: CraftIndex, opts: CalcOptions): CalcResult {
     if (needed <= 0) continue;
 
     const recipe = node.recipe;
-    const outAmount = Math.max(1, recipe.out[1]);
-    const crafts = ceilQty(needed / outAmount);
+    const out = outAmount(recipe);
+    const crafts = craftsFor(recipe, needed);
     const laborEach = calc.labor(recipe);
 
     steps.push({
@@ -420,10 +438,10 @@ export function calculate(index: CraftIndex, opts: CalcOptions): CalcResult {
       itemId,
       itemName: itemName(index, itemId),
       crafts,
-      outAmount,
+      outAmount: out,
       needed,
-      produced: crafts * outAmount,
-      surplus: crafts * outAmount - needed,
+      produced: crafts * out,
+      surplus: crafts * out - needed,
       laborEach,
       laborTotal: laborEach * crafts,
       feeTotal: recipe.fee * crafts,
@@ -473,7 +491,7 @@ export function calculate(index: CraftIndex, opts: CalcOptions): CalcResult {
     feeGold += s.feeTotal;
     labor += s.laborTotal;
   }
-  const laborGold = labor * goldPerLabor;
+  const laborGold = labor * calc.goldPerLabor;
 
   const totals: Totals = {
     buyGold,
@@ -487,7 +505,7 @@ export function calculate(index: CraftIndex, opts: CalcOptions): CalcResult {
     steps,
     buyList,
     totals,
-    tree: buildTree(index, calc, craftNodes, opts.target, qty, !!targetRecipe),
+    tree: buildTree(index, calc, targetRecipe, opts.target, qty),
   };
   if (!targetRecipe) {
     result.error = `${itemName(index, opts.target)} (${opts.target}) has no recipe — it cannot be crafted.`;
@@ -499,10 +517,9 @@ export function calculate(index: CraftIndex, opts: CalcOptions): CalcResult {
 function buildTree(
   index: CraftIndex,
   calc: Calculator,
-  craftNodes: ReadonlyMap<number, CraftNode>,
+  targetRecipe: Recipe | null,
   target: number,
   qty: number,
-  targetCraftable: boolean,
   maxNodes = 20000,
 ): TreeNode {
   let budget = maxNodes;
@@ -522,16 +539,15 @@ function buildTree(
       cycleBroken: false,
     };
 
-    const craftNode = craftNodes.get(itemId);
-    const recipe = forceCraft ? craftNode?.recipe ?? null : res.mode === 'craft' ? res.recipe : null;
+    // The target (forceCraft) is always crafted, per SPEC; everything else follows the decision.
+    const recipe = forceCraft ? targetRecipe : res.mode === 'craft' ? res.recipe : null;
     if (!recipe) return node;
     if (onPath.has(itemId) || budget <= 0) {
       node.cycleBroken = true;
       return node;
     }
 
-    const outAmount = Math.max(1, recipe.out[1]);
-    const crafts = ceilQty(units / outAmount);
+    const crafts = craftsFor(recipe, units);
     node.mode = 'craft';
     node.recipeId = recipe.id;
     node.recipeName = recipe.name;
@@ -549,5 +565,5 @@ function buildTree(
     return node;
   };
 
-  return make(target, qty, targetCraftable, new Set());
+  return make(target, qty, targetRecipe !== null, new Set());
 }

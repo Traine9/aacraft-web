@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it } from 'vitest';
 import { existsSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import {
@@ -8,7 +8,9 @@ import {
   type BuyRow,
   type CalcOptions,
   type CalcResult,
+  type CraftIndex,
   type DataSet,
+  type Recipe,
   type Step,
 } from '../src/engine.js';
 
@@ -64,9 +66,18 @@ function fixture(): DataSet {
   };
 }
 
+/** Wraps a bare items/recipes pair in the `DataSet` envelope. */
+const makeIndex = (items: DataSet['items'], recipes: Recipe[]): CraftIndex =>
+  buildIndex({ updated: '2026-01-01', items, recipes });
+
 const index = buildIndex(fixture());
 
-const run = (opts: CalcOptions): CalcResult => calculate(index, opts);
+/** `calculate` against the fixture; every option defaults to the baseline 1x Ayanad, free labor. */
+const run = (opts: Partial<CalcOptions> = {}): CalcResult =>
+  calculate(index, { target: 1, qty: 1, goldPerLabor: 0, ...opts });
+
+/** The full craft chain for the baseline run: Cloth -> Magnificent -> Delphinad -> Ayanad. */
+const BASELINE_STEPS = [5, 4, 2, 1];
 
 const step = (res: CalcResult, itemId: number): Step | undefined =>
   res.steps.find((s) => s.itemId === itemId);
@@ -87,11 +98,11 @@ describe('effectiveLabor', () => {
 });
 
 describe('recursive expansion', () => {
-  const res = run({ target: 1, qty: 1, goldPerLabor: 0 });
+  const res = run();
 
   it('crafts the whole chain when labor is free', () => {
     expect(res.error).toBeUndefined();
-    expect(res.steps.map((s) => s.itemId)).toEqual([5, 4, 2, 1]);
+    expect(res.steps.map((s) => s.itemId)).toEqual(BASELINE_STEPS);
   });
 
   it('lists steps bottom-up with the target last', () => {
@@ -132,7 +143,7 @@ describe('recursive expansion', () => {
   });
 
   it('scales with quantity', () => {
-    const ten = run({ target: 1, qty: 10, goldPerLabor: 0 });
+    const ten = run({ qty: 10 });
     expect(step(ten, 1)?.crafts).toBe(10);
     expect(buy(ten, 3)?.qty).toBe(50);
     expect(step(ten, 5)?.needed).toBe(20);
@@ -141,7 +152,7 @@ describe('recursive expansion', () => {
   });
 
   it('reports an error when the target has no recipe', () => {
-    const bad = run({ target: 3, qty: 1, goldPerLabor: 0 });
+    const bad = run({ target: 3 });
     expect(bad.error).toMatch(/no recipe/i);
     expect(bad.steps).toEqual([]);
   });
@@ -149,10 +160,7 @@ describe('recursive expansion', () => {
 
 describe('craft-vs-buy decision', () => {
   it('flips to buying as gold-per-labor rises', () => {
-    const cheapLabor = run({ target: 1, qty: 1, goldPerLabor: 0 });
-    expect(cheapLabor.steps.map((s) => s.itemId)).toEqual([5, 4, 2, 1]);
-
-    const dearLabor = run({ target: 1, qty: 1, goldPerLabor: 10 });
+    const dearLabor = run({ goldPerLabor: 10 });
     // Cloth (17.63 > 2), Magnificent (156.10 > 60) and Delphinad (436.50 > 200) all become buys.
     expect(dearLabor.steps.map((s) => s.itemId)).toEqual([1]);
     expect(buy(dearLabor, 2)?.qty).toBe(1);
@@ -165,26 +173,26 @@ describe('craft-vs-buy decision', () => {
   });
 
   it('always crafts the target even when buying it would be cheaper', () => {
-    const res = run({ target: 1, qty: 1, goldPerLabor: 1000 });
+    const res = run({ goldPerLabor: 1000 });
     expect(step(res, 1)?.crafts).toBe(1);
     expect(buy(res, 1)).toBeUndefined();
   });
 
   it('buys at the exact break-even price (craft must be strictly cheaper)', () => {
     // Cloth craft cost per unit at goldPerLabor 0 is (5 * 0.1) / 4 = 0.125.
-    const equal = run({ target: 1, qty: 1, goldPerLabor: 0, priceOverride: { 5: 0.125 } });
+    const equal = run({ priceOverride: { 5: 0.125 } });
     expect(step(equal, 5)).toBeUndefined();
     expect(buy(equal, 5)?.qty).toBe(2);
 
-    const justAbove = run({ target: 1, qty: 1, goldPerLabor: 0, priceOverride: { 5: 0.1251 } });
+    const justAbove = run({ priceOverride: { 5: 0.1251 } });
     expect(justAbove.steps.some((s) => s.itemId === 5)).toBe(true);
   });
 });
 
 describe('profReduction', () => {
   it('reduces labor by 30% (rounded up) when enabled', () => {
-    const on = run({ target: 1, qty: 1, goldPerLabor: 0, profReduction: true });
-    const off = run({ target: 1, qty: 1, goldPerLabor: 0, profReduction: false });
+    const on = run({ profReduction: true });
+    const off = run({ profReduction: false });
 
     expect(on.totals.labor).toBe(126); // 70 + 35 + 14 + 7
     expect(off.totals.labor).toBe(180); // 100 + 50 + 20 + 10
@@ -193,14 +201,14 @@ describe('profReduction', () => {
   });
 
   it('defaults to enabled', () => {
-    expect(run({ target: 1, qty: 1, goldPerLabor: 0 }).totals.labor).toBe(126);
+    expect(run().totals.labor).toBe(126);
   });
 
   it('can change a craft-vs-buy decision', () => {
     // At 3 g/labor cloth is bought either way, so Magnificent costs 2 + 10 + 0.1 + labor * 3.
     // Labor 20 -> 14 effective with proficiency: 54.1 (craft) vs 72.1 without it (price is 60).
-    const withProf = run({ target: 1, qty: 1, goldPerLabor: 3, profReduction: true });
-    const noProf = run({ target: 1, qty: 1, goldPerLabor: 3, profReduction: false });
+    const withProf = run({ goldPerLabor: 3, profReduction: true });
+    const noProf = run({ goldPerLabor: 3, profReduction: false });
     expect(withProf.steps.map((s) => s.itemId)).toEqual([4, 2, 1]);
     expect(noProf.steps.map((s) => s.itemId)).toEqual([1]);
     expect(buy(noProf, 2)?.unitPrice).toBe(200);
@@ -209,7 +217,7 @@ describe('profReduction', () => {
 
 describe('priceOverride', () => {
   it('replaces the AH price and flags the row', () => {
-    const res = run({ target: 1, qty: 1, goldPerLabor: 0, priceOverride: { 6: 1 } });
+    const res = run({ priceOverride: { 6: 1 } });
     const fiber = buy(res, 6);
     expect(fiber?.unitPrice).toBe(1);
     expect(fiber?.total).toBe(5);
@@ -220,7 +228,7 @@ describe('priceOverride', () => {
 
   it('recalculates the decision, not just the price', () => {
     // Cheap cloth on the AH beats crafting it out of fiber.
-    const res = run({ target: 1, qty: 1, goldPerLabor: 0, priceOverride: { 5: 0.05 } });
+    const res = run({ priceOverride: { 5: 0.05 } });
     expect(res.steps.some((s) => s.itemId === 5)).toBe(false);
     expect(buy(res, 5)?.qty).toBe(2);
     expect(buy(res, 6)).toBeUndefined(); // fiber subtree gone
@@ -228,7 +236,7 @@ describe('priceOverride', () => {
 
   it('propagates up the chain', () => {
     // Expensive wisps make every tier above them uneconomical.
-    const res = run({ target: 1, qty: 1, goldPerLabor: 0, priceOverride: { 3: 500 } });
+    const res = run({ priceOverride: { 3: 500 } });
     expect(res.steps.map((s) => s.itemId)).toEqual([1]);
     expect(buy(res, 2)?.unitPrice).toBe(200);
     expect(buy(res, 3)?.unitPrice).toBe(500);
@@ -237,10 +245,7 @@ describe('priceOverride', () => {
 
 describe('modeOverride', () => {
   it('force-buying an intermediate collapses its whole subtree', () => {
-    const base = run({ target: 1, qty: 1, goldPerLabor: 0 });
-    expect(base.steps.map((s) => s.itemId)).toEqual([5, 4, 2, 1]);
-
-    const res = run({ target: 1, qty: 1, goldPerLabor: 0, modeOverride: { 2: 'buy' } });
+    const res = run({ modeOverride: { 2: 'buy' } });
     expect(res.steps.map((s) => s.itemId)).toEqual([1]);
     expect(buy(res, 2)?.qty).toBe(1);
     expect(buy(res, 2)?.unitPrice).toBe(200);
@@ -254,13 +259,13 @@ describe('modeOverride', () => {
   });
 
   it('force-crafting beats a cheaper AH price', () => {
-    const res = run({ target: 1, qty: 1, goldPerLabor: 10, modeOverride: { 2: 'craft' } });
+    const res = run({ goldPerLabor: 10, modeOverride: { 2: 'craft' } });
     expect(res.steps.some((s) => s.itemId === 2)).toBe(true);
     expect(buy(res, 2)).toBeUndefined();
   });
 
   it('is ignored for an item with no recipe', () => {
-    const res = run({ target: 1, qty: 1, goldPerLabor: 0, modeOverride: { 3: 'craft' } });
+    const res = run({ modeOverride: { 3: 'craft' } });
     expect(buy(res, 3)?.qty).toBe(5);
   });
 });
@@ -268,19 +273,19 @@ describe('modeOverride', () => {
 describe('recipeOverride', () => {
   it('defaults to the lowest labor per output unit', () => {
     // 121 makes 2 for 12 labor (6/unit) and beats 120 (10/unit) despite costing more per craft.
-    const res = run({ target: 12, qty: 1, goldPerLabor: 0 });
+    const res = run({ target: 12 });
     expect(step(res, 12)?.recipeId).toBe(121);
     expect(step(res, 12)?.surplus).toBe(1);
   });
 
   it('breaks ties on the lowest recipe id', () => {
-    const res = run({ target: 11, qty: 1, goldPerLabor: 0 });
+    const res = run({ target: 11 });
     expect(step(res, 11)?.recipeId).toBe(109);
     expect(buy(res, 13)?.qty).toBe(2); // r109 uses 2 filler, r110 uses 1
   });
 
   it('uses the requested recipe instead', () => {
-    const res = run({ target: 2, qty: 1, goldPerLabor: 0, recipeOverride: { 2: 106 } });
+    const res = run({ target: 2, recipeOverride: { 2: 106 } });
     expect(step(res, 2)?.recipeId).toBe(106);
     expect(step(res, 2)?.feeTotal).toBeCloseTo(0.2, 9);
     expect(step(res, 2)?.laborEach).toBe(56); // ceil(80 * 0.7)
@@ -288,20 +293,20 @@ describe('recipeOverride', () => {
   });
 
   it('applies to sub-recipes too', () => {
-    const res = run({ target: 1, qty: 1, goldPerLabor: 0, recipeOverride: { 2: 106 } });
+    const res = run({ recipeOverride: { 2: 106 } });
     expect(step(res, 2)?.recipeId).toBe(106);
     expect(buy(res, 9)?.qty).toBe(10);
   });
 
   it('falls back to the default when the override does not make the item', () => {
-    const res = run({ target: 2, qty: 1, goldPerLabor: 0, recipeOverride: { 2: 101 } });
+    const res = run({ target: 2, recipeOverride: { 2: 101 } });
     expect(step(res, 2)?.recipeId).toBe(102);
   });
 });
 
 describe('missing prices', () => {
   it('flags unpriced leaves and prices them at 0', () => {
-    const res = run({ target: 10, qty: 1, goldPerLabor: 0 });
+    const res = run({ target: 10 });
     const dust = buy(res, 7);
     expect(dust?.qty).toBe(2);
     expect(dust?.noPrice).toBe(true);
@@ -311,14 +316,14 @@ describe('missing prices', () => {
   });
 
   it('forces a craft when the item has a recipe but no price, however dear labor is', () => {
-    const res = run({ target: 10, qty: 1, goldPerLabor: 100000 });
+    const res = run({ target: 10, goldPerLabor: 100000 });
     expect(res.steps.map((s) => s.itemId)).toEqual([8, 10]);
     expect(buy(res, 8)).toBeUndefined();
     expect(res.totals.labor).toBe(1 + 4); // ceil(1*0.7) + ceil(5*0.7)
   });
 
   it('lets a price override rescue an unpriced item', () => {
-    const res = run({ target: 10, qty: 1, goldPerLabor: 100000, priceOverride: { 8: 5 } });
+    const res = run({ target: 10, goldPerLabor: 100000, priceOverride: { 8: 5 } });
     expect(res.steps.map((s) => s.itemId)).toEqual([10]);
     expect(buy(res, 8)?.unitPrice).toBe(5);
     expect(buy(res, 8)?.noPrice).toBe(false);
@@ -328,7 +333,7 @@ describe('missing prices', () => {
 
 describe('crafting fees', () => {
   it('never leaks Coin into the buy list and sums fees into feeGold', () => {
-    const res = run({ target: 1, qty: 3, goldPerLabor: 0 });
+    const res = run({ qty: 3 });
     expect(res.buyList.some((b) => b.itemId === 500)).toBe(false);
     // 3 Ayanad (1.5 each) + 3 Delphinad (0.5) + 3 Magnificent (0.1) + 2 Cloth crafts (0)
     expect(step(res, 1)?.feeTotal).toBeCloseTo(4.5, 9);
@@ -341,14 +346,10 @@ describe('crafting fees', () => {
 });
 
 describe('cycle safety', () => {
-  const cyclic = buildIndex({
-    updated: '2026-01-01',
-    items: { 20: ['Alpha', 5], 21: ['Beta', 100] },
-    recipes: [
-      { id: 201, name: 'Alpha', out: [20, 1], labor: 1, fee: 0, mats: [[21, 1]] },
-      { id: 202, name: 'Beta', out: [21, 1], labor: 1, fee: 0, mats: [[20, 1]] },
-    ],
-  });
+  const cyclic = makeIndex({ 20: ['Alpha', 5], 21: ['Beta', 100] }, [
+    { id: 201, name: 'Alpha', out: [20, 1], labor: 1, fee: 0, mats: [[21, 1]] },
+    { id: 202, name: 'Beta', out: [21, 1], labor: 1, fee: 0, mats: [[20, 1]] },
+  ]);
 
   it('terminates and treats the inner occurrence as a buy', () => {
     const res = calculate(cyclic, { target: 20, qty: 1, goldPerLabor: 0 });
@@ -361,13 +362,9 @@ describe('cycle safety', () => {
   });
 
   it('survives a self-referencing recipe', () => {
-    const selfRef = buildIndex({
-      updated: '2026-01-01',
-      items: { 30: ['Ouroboros', 7], 31: ['Scale', 1] },
-      recipes: [
-        { id: 301, name: 'Ouroboros', out: [30, 1], labor: 2, fee: 0, mats: [[30, 1], [31, 3]] },
-      ],
-    });
+    const selfRef = makeIndex({ 30: ['Ouroboros', 7], 31: ['Scale', 1] }, [
+      { id: 301, name: 'Ouroboros', out: [30, 1], labor: 2, fee: 0, mats: [[30, 1], [31, 3]] },
+    ]);
     const res = calculate(selfRef, { target: 30, qty: 2, goldPerLabor: 0 });
     expect(res.steps.map((s) => s.itemId)).toEqual([30]);
     expect(buy(res, 30)?.qty).toBe(2);
@@ -378,7 +375,7 @@ describe('cycle safety', () => {
 
 describe('decision tree', () => {
   it('mirrors the decision per branch', () => {
-    const res = run({ target: 1, qty: 1, goldPerLabor: 0 });
+    const res = run();
     expect(res.tree.itemId).toBe(1);
     expect(res.tree.mode).toBe('craft');
     expect(res.tree.recipeId).toBe(101);
@@ -393,7 +390,7 @@ describe('decision tree', () => {
   });
 
   it('stops at a force-bought node', () => {
-    const res = run({ target: 1, qty: 1, goldPerLabor: 0, modeOverride: { 2: 'buy' } });
+    const res = run({ modeOverride: { 2: 'buy' } });
     const delphinad = res.tree.children?.[0];
     expect(delphinad?.mode).toBe('buy');
     expect(delphinad?.modeOverridden).toBe(true);
@@ -407,11 +404,17 @@ describe('decision tree', () => {
 const dataPath = fileURLToPath(new URL('../public/data.json', import.meta.url));
 
 describe.skipIf(!existsSync(dataPath))('real data smoke test', () => {
-  const real = JSON.parse(readFileSync(dataPath, 'utf8')) as DataSet;
-  const realIndex = buildIndex(real);
+  // Parsed in beforeAll, not at collection time: 1.7 MB of JSON must not be read when the suite is
+  // skipped (or on every watch-mode re-run).
+  let real: DataSet;
+  let realIndex: CraftIndex;
+  beforeAll(() => {
+    real = JSON.parse(readFileSync(dataPath, 'utf8')) as DataSet;
+    realIndex = buildIndex(real);
+  });
 
-  // NOTE: SPEC/presets say "Typhoon Trade Pack Storage, itemId 7429" — but 7429 is the RECIPE id.
-  // The item it makes is 35792. Both are asserted here so the mix-up cannot come back.
+  // NOTE: 7429 is the RECIPE id of Typhoon Trade Pack Storage; the ITEM it makes is 35792 (an
+  // easy mix-up — see SPEC). Both are asserted here so it cannot come back.
   const TYPHOON_RECIPE = 7429;
   const TYPHOON_ITEM = 35792;
 

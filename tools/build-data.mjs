@@ -82,6 +82,9 @@ function parseCsv(text) {
 /**
  * Price cell -> gold number. Strips thousands-commas and a trailing `g`.
  * Blank / unparseable / non-positive => null (no price).
+ *
+ * Note: a 0 in the sheet means "no data", so it becomes null here — unlike the engine, where an
+ * explicit user price override of 0 is honoured as "free".
  * @param {string | undefined} raw
  * @returns {number | null}
  */
@@ -106,16 +109,13 @@ const craftsAll = readJson('crafts_all.json');
 /** @type {Array<{id:number,primary_product_id:number,product_name:string}>} */
 const craftsIndex = readJson('crafts_index.json');
 
+// crafts_index is consulted for one thing only: which product of a recipe is the primary one.
+// Its `product_name` is not needed — crafts_all names every product and material we keep.
 const primaryById = new Map();
 for (const r of craftsIndex) {
   if (r && typeof r.id === 'number' && typeof r.primary_product_id === 'number') {
     primaryById.set(r.id, r.primary_product_id);
   }
-}
-const indexNameByItem = new Map();
-for (const r of craftsIndex) {
-  const nm = typeof r?.product_name === 'string' ? r.product_name.trim() : '';
-  if (nm && !indexNameByItem.has(r.primary_product_id)) indexNameByItem.set(r.primary_product_id, nm);
 }
 
 const csvRows = parseCsv(readFileSync(resolve(SRC, 'ahprices.csv'), 'utf8'));
@@ -181,9 +181,9 @@ for (const r of craftsAll) {
   for (const p of products) if (typeof p?.item_id === 'number') noteName(p.item_id, p.name);
   for (const m of materials) if (typeof m?.item_id === 'number') noteName(m.item_id, m.name);
 
-  const primaryId = primaryById.get(r.id) ?? (typeof r.primary_product_id === 'number' ? r.primary_product_id : undefined);
-  const product =
-    products.find((p) => p?.item_id === primaryId) ?? products.find((p) => typeof p?.item_id === 'number');
+  // Primary product per SPEC: the one crafts_index points at, else the first product.
+  const primaryId = primaryById.get(r.id);
+  const product = products.find((p) => p?.item_id === primaryId) ?? products[0];
   if (!product) {
     skippedNoProduct++;
     continue;
@@ -242,7 +242,6 @@ for (const id of [...referenced].sort((a, b) => a - b)) {
   const fromAh = ah.get(id);
   const name =
     recipeNames.get(id) ||
-    indexNameByItem.get(id) ||
     (fromAh?.name ?? '') ||
     recipeTitleByItem.get(id) ||
     `Item ${id}`;

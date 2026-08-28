@@ -31,9 +31,9 @@ Reads the three sources, writes `public/data.json`:
   "updated": "2026-08-05",          // from ahprices.csv header stamp
   "items":   { "<id>": ["Name", price|null] },   // every item referenced by any kept recipe or product
   "recipes": [ { "id": 9000280, "name": "Typhoon Trade Pack Storage Design",
-                 "out": [7429, 1],               // [primary_product_id, amount]
-                 "labor": 650, "fee": 2.5,       // fee in gold from Coin material
-                 "mats": [[itemId, amount], ...] // Coin excluded
+                 "out": [35961, 1],              // [primary_product_id, amount]
+                 "labor": 250, "fee": 0,         // fee in gold from the Coin material (0 here)
+                 "mats": [[9000163, 25]]         // [itemId, amount][], Coin excluded
                } ]
 }
 ```
@@ -80,7 +80,9 @@ Single page, desktop-first, works standalone from `dist/` so it can be dropped i
   **gold per labor** field with a short hint: "If the AH price is below the craft cost at this
   labor value, the AH price is used", **max proficiency** checkbox, and the data `updated` stamp.
 - Preset buttons (from `src/presets.ts`): at minimum `22× Typhoon Trade Pack Storage`
-  (itemId 7429, qty 22). Clicking a preset fills target+qty and recalcs.
+  (itemId **35792**, qty 22). Note 7429 is the *recipe* id for that pack — item 7429 is an
+  unrelated item (Blazing Sun Gauntlets); presets take item ids. Clicking a preset fills
+  target+qty and recalcs.
 - Craft tree: collapsible tree of the decision (craft nodes show crafts × labor; buy nodes show
   qty × price); per craftable node a craft/buy toggle wired to `modeOverride`.
 - **Buy list** table: each row has an editable unit-price `<input>` (prefilled from AH price;
