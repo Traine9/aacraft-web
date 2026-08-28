@@ -12,7 +12,7 @@ interface ElOptions {
   text?: string;
   testid?: string;
   attrs?: Record<string, string>;
-  children?: Array<Node | null>;
+  children?: Node[];
 }
 
 /** Create an element: `el('span', { className: 'badge', text: 'no price' })`. */
@@ -25,12 +25,28 @@ export function el<K extends keyof HTMLElementTagNameMap>(
   if (opts.text !== undefined) node.textContent = opts.text;
   if (opts.testid) node.dataset['testid'] = opts.testid;
   for (const [k, v] of Object.entries(opts.attrs ?? {})) node.setAttribute(k, v);
-  for (const child of opts.children ?? []) if (child) node.appendChild(child);
+  for (const child of opts.children ?? []) node.appendChild(child);
   return node;
 }
 
 export function clear(node: Element): void {
   node.replaceChildren();
+}
+
+/** The one badge shape, used by the tree and the buy list: `.badge.badge-<kind>` + a matching testid. */
+export function badge(kind: string, text: string): HTMLElement {
+  return el('span', { className: `badge badge-${kind}`, text, testid: `badge-${kind}` });
+}
+
+/**
+ * The one encoding for boolean display flags: `data-<name>="true"` when on, attribute absent when
+ * off. CSS styles them through attribute selectors, so nothing needs a parallel class.
+ */
+export function setFlags(node: Element, flags: Record<string, boolean>): void {
+  for (const [name, on] of Object.entries(flags)) {
+    if (on) node.setAttribute(`data-${name}`, 'true');
+    else node.removeAttribute(`data-${name}`);
+  }
 }
 
 const GOLD_FMT = new Intl.NumberFormat('en-US', {

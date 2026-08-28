@@ -114,6 +114,8 @@ export interface TreeNode {
   noPrice: boolean;
   priceOverridden: boolean;
   modeOverridden: boolean;
+  /** Display only: the item has at least one recipe, so a craft/buy toggle makes sense on it. */
+  craftable: boolean;
   /** True when this occurrence was forced to `buy` to break a recipe cycle. */
   cycleBroken: boolean;
   recipeId?: number;
@@ -168,6 +170,18 @@ export function buildIndex(data: DataSet): CraftIndex {
     if (Number.isFinite(n)) entryById.set(n, entry);
   }
   return { data, recipeById, recipesByProduct, entryById };
+}
+
+/** Anything the UI lists: a display name plus its numeric id (`id` on search items, `itemId` on rows). */
+export interface Named {
+  name: string;
+  id?: number;
+  itemId?: number;
+}
+
+/** The one display ordering: by name, ties broken by item id so lists never wobble. */
+export function byNameThenId(a: Named, b: Named): number {
+  return a.name.localeCompare(b.name) || (a.id ?? a.itemId ?? 0) - (b.id ?? b.itemId ?? 0);
 }
 
 export function itemName(index: CraftIndex, itemId: number): string {
@@ -481,7 +495,7 @@ export function calculate(index: CraftIndex, opts: CalcOptions): CalcResult {
       overridden: res.priceOverridden,
     });
   }
-  buyList.sort((a, b) => b.total - a.total || a.name.localeCompare(b.name) || a.itemId - b.itemId);
+  buyList.sort((a, b) => b.total - a.total || byNameThenId(a, b));
 
   let buyGold = 0;
   for (const row of buyList) buyGold += row.total;
@@ -536,6 +550,7 @@ function buildTree(
       noPrice: res.unitPrice === null,
       priceOverridden: res.priceOverridden,
       modeOverridden: res.modeOverridden,
+      craftable: index.recipesByProduct.has(itemId),
       cycleBroken: false,
     };
 

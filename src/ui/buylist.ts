@@ -1,58 +1,93 @@
-/** Buy-list table body: filterable rows with live-editable unit prices. */
+/**
+ * Buy-list table body: filterable rows with live-editable unit prices.
+ *
+ * Painting only — every event is handled by the delegated listeners `main.ts` wires on the tbody,
+ * which find their item id on the `data-item-id` of the input / button that was clicked.
+ */
 import type { BuyRow } from '../engine';
-import { clear, el, gold, int, priceInputValue } from './dom';
+import { badge, clear, el, gold, int, priceInputValue, setFlags } from './dom';
 
-export interface BuyListHandlers {
-  /** Raw input text; empty means "drop the override and go back to the AH price". */
-  onPriceInput: (itemId: number, raw: string) => void;
-  onPriceReset: (itemId: number) => void;
-  /** The user left a price field — safe to rebuild (re-sort) the table again. */
-  onPriceCommit: () => void;
+/** Test id of the editable unit-price inputs — the anchor for delegation and focus checks. */
+export const PRICE_INPUT = 'price-input';
+/** Test id of the "back to the AH price" button that appears on an overridden row. */
+export const PRICE_RESET = 'price-reset';
+
+export function isPriceInput(target: EventTarget | null): target is HTMLInputElement {
+  return target instanceof HTMLInputElement && target.dataset['testid'] === PRICE_INPUT;
 }
 
-export function matchesFilter(row: BuyRow, filter: string): boolean {
+/** True while the user is typing into a price field — the table must not be rebuilt under them. */
+export function isEditingPrice(): boolean {
+  return isPriceInput(document.activeElement);
+}
+
+/** Filter key of a row: its name and its id, both searchable. */
+interface RowKey {
+  name: string;
+  itemId: number;
+}
+
+export function matchesFilter(row: RowKey, filter: string): boolean {
   const q = filter.trim().toLowerCase();
   if (!q) return true;
   return row.name.toLowerCase().includes(q) || String(row.itemId).includes(q);
 }
 
-/** qty 0 = an override pushed the item out of the buy list; the row is kept so it stays editable. */
-function markRow(tr: HTMLTableRowElement, row: BuyRow, h: BuyListHandlers): void {
-  const dropped = row.qty === 0;
-  tr.classList.toggle('row-overridden', row.overridden);
-  tr.classList.toggle('row-dropped', dropped);
-  toggleAttr(tr, 'data-overridden', row.overridden);
-  toggleAttr(tr, 'data-dropped', dropped);
-  toggleAttr(tr, 'data-noprice', row.noPrice);
-
-  const name = tr.querySelector('.cell-name');
-  if (name) {
-    toggleBadge(name, 'badge-noprice', 'no price', row.noPrice);
-    toggleBadge(name, 'badge-dropped', 'not bought', dropped);
+/**
+ * View-only: hide the rows that do not match, show the right empty message. Never touches the
+ * engine, so typing in the filter leaves the craft tree (and its scroll position) alone.
+ */
+export function applyFilter(tbody: HTMLTableSectionElement, filter: string): void {
+  let rows = 0;
+  let visible = 0;
+  for (const tr of tbody.querySelectorAll<HTMLTableRowElement>('tr[data-item-id]')) {
+    rows++;
+    // The rendered row is the filter key: its name is right there in the cell.
+    const key: RowKey = {
+      name: tr.querySelector('.item-name')?.textContent ?? '',
+      itemId: Number(tr.dataset['itemId']),
+    };
+    tr.hidden = !matchesFilter(key, filter);
+    if (!tr.hidden) visible++;
   }
 
-  const cell = tr.querySelector('.cell-price');
-  const existing = cell?.querySelector<HTMLButtonElement>('[data-testid="price-reset"]');
-  if (row.overridden && cell && !existing) cell.appendChild(resetButton(row, h));
-  else if (!row.overridden && existing) existing.remove();
+  const empty = tbody.querySelector<HTMLTableRowElement>('[data-testid="buy-empty"]');
+  if (!empty) return;
+  empty.hidden = visible > 0;
+  const cell = empty.firstElementChild;
+  if (cell) {
+    cell.textContent =
+      rows === 0 ? 'Nothing to buy — every material is crafted.' : 'No item matches the filter.';
+  }
 }
 
-function toggleAttr(node: Element, name: string, on: boolean): void {
-  if (on) node.setAttribute(name, 'true');
-  else node.removeAttribute(name);
-}
-
-function toggleBadge(parent: Element, className: string, text: string, on: boolean): void {
-  const existing = parent.querySelector(`.${className}`);
-  if (on && !existing) parent.appendChild(el('span', { className: `badge ${className}`, text }));
+/** Add or remove a single child, identified by its test id. Idempotent — safe on every patch. */
+function toggleChild(parent: Element, testid: string, on: boolean, make: () => HTMLElement): void {
+  const existing = parent.querySelector(`[data-testid="${testid}"]`);
+  if (on && !existing) parent.appendChild(make());
   else if (!on && existing) existing.remove();
 }
 
-function resetButton(row: BuyRow, h: BuyListHandlers): HTMLButtonElement {
-  const btn = el('button', {
+/** qty 0 = an override pushed the item out of the buy list; the row is kept so it stays editable. */
+function markRow(tr: HTMLTableRowElement, row: BuyRow): void {
+  const dropped = row.qty === 0;
+  setFlags(tr, { overridden: row.overridden, dropped, noprice: row.noPrice });
+
+  const name = tr.querySelector('.cell-name');
+  if (name) {
+    toggleChild(name, 'badge-noprice', row.noPrice, () => badge('noprice', 'no price'));
+    toggleChild(name, 'badge-dropped', dropped, () => badge('dropped', 'not bought'));
+  }
+
+  const cell = tr.querySelector('.cell-price');
+  if (cell) toggleChild(cell, PRICE_RESET, row.overridden, () => resetButton(row));
+}
+
+function resetButton(row: BuyRow): HTMLButtonElement {
+  return el('button', {
     className: 'reset-btn',
     text: '⟲',
-    testid: 'price-reset',
+    testid: PRICE_RESET,
     attrs: {
       type: 'button',
       title: 'Reset to the auction-house price',
@@ -60,8 +95,11 @@ function resetButton(row: BuyRow, h: BuyListHandlers): HTMLButtonElement {
       'data-item-id': String(row.itemId),
     },
   });
-  btn.addEventListener('click', () => h.onPriceReset(row.itemId));
-  return btn;
+}
+
+function setCell(tr: HTMLTableRowElement, testid: string, text: string): void {
+  const cell = tr.querySelector(`[data-testid="${testid}"]`);
+  if (cell) cell.textContent = text;
 }
 
 /** Full rebuild: rows, order and filtering. Used whenever no price field is being typed into. */
@@ -69,26 +107,13 @@ export function renderBuyList(
   tbody: HTMLTableSectionElement,
   rows: readonly BuyRow[],
   filter: string,
-  h: BuyListHandlers,
 ): void {
   clear(tbody);
 
-  const visible = rows.filter((row) => matchesFilter(row, filter));
-  if (visible.length === 0) {
-    const cell = el('td', {
-      className: 'empty',
-      text:
-        rows.length === 0 ? 'Nothing to buy — every material is crafted.' : 'No item matches the filter.',
-      attrs: { colspan: '4' },
-    });
-    tbody.appendChild(el('tr', { testid: 'buy-empty', children: [cell] }));
-    return;
-  }
-
-  for (const row of visible) {
+  for (const row of rows) {
     const input = el('input', {
       className: 'price-input',
-      testid: 'price-input',
+      testid: PRICE_INPUT,
       attrs: {
         type: 'number',
         min: '0',
@@ -98,9 +123,6 @@ export function renderBuyList(
         'aria-label': `Unit price for ${row.name}`,
       },
     });
-    input.addEventListener('input', () => h.onPriceInput(row.itemId, input.value));
-    // Leaving the field is the moment the table may safely re-sort / drop rows again.
-    input.addEventListener('blur', () => h.onPriceCommit());
 
     const tr = el('tr', {
       testid: 'buy-row',
@@ -118,9 +140,18 @@ export function renderBuyList(
         el('td', { className: 'num', text: gold(row.total), testid: 'row-total' }),
       ],
     });
-    markRow(tr, row, h);
+    markRow(tr, row);
     tbody.appendChild(tr);
   }
+
+  // Always present, shown by `applyFilter` when nothing is visible.
+  tbody.appendChild(
+    el('tr', {
+      testid: 'buy-empty',
+      children: [el('td', { className: 'empty', attrs: { colspan: '4' } })],
+    }),
+  );
+  applyFilter(tbody, filter);
 }
 
 /**
@@ -129,32 +160,23 @@ export function renderBuyList(
  * `<input type="number">` would lose the caret (Chrome has no selection API for number inputs).
  * The next full render (on blur, or any other control) re-sorts and re-filters the table.
  */
-export function patchBuyList(
-  tbody: HTMLTableSectionElement,
-  rows: readonly BuyRow[],
-  h: BuyListHandlers,
-): void {
+export function patchBuyList(tbody: HTMLTableSectionElement, rows: readonly BuyRow[]): void {
   const byId = new Map(rows.map((row) => [row.itemId, row]));
   for (const tr of tbody.querySelectorAll<HTMLTableRowElement>('tr[data-item-id]')) {
-    const itemId = Number(tr.dataset['itemId']);
-    const input = tr.querySelector<HTMLInputElement>('[data-testid="price-input"]');
-    const fresh = byId.get(itemId);
-    // Gone from the result: it is crafted now (or its consumer flipped) — show it as not bought.
-    const row: BuyRow = fresh ?? {
-      itemId,
-      name: tr.querySelector('.item-name')?.textContent ?? `Item ${itemId}`,
-      qty: 0,
-      unitPrice: Number(input?.value ?? 0),
-      total: 0,
-      noPrice: false,
-      overridden: tr.dataset['overridden'] === 'true',
-    };
+    const row = byId.get(Number(tr.dataset['itemId']));
+    // Gone from the result: it is crafted now (or its consumer flipped). Dim it and zero it; the
+    // rebuild on blur brings it back as a proper row (see `withOverrideRows` in main.ts).
+    if (!row) {
+      setCell(tr, 'row-qty', int(0));
+      setCell(tr, 'row-total', gold(0));
+      setFlags(tr, { dropped: true });
+      continue;
+    }
 
-    const qtyCell = tr.querySelector('[data-testid="row-qty"]');
-    if (qtyCell) qtyCell.textContent = int(row.qty);
-    const totalCell = tr.querySelector('[data-testid="row-total"]');
-    if (totalCell) totalCell.textContent = gold(row.total);
+    setCell(tr, 'row-qty', int(row.qty));
+    setCell(tr, 'row-total', gold(row.total));
+    const input = tr.querySelector<HTMLInputElement>(`[data-testid="${PRICE_INPUT}"]`);
     if (input && document.activeElement !== input) input.value = priceInputValue(row.unitPrice);
-    markRow(tr, row, h);
+    markRow(tr, row);
   }
 }

@@ -1,5 +1,5 @@
 /** Item search: substring match over craftable items with a keyboard-navigable popup. */
-import type { CraftIndex } from '../engine';
+import { byNameThenId, itemName, type CraftIndex } from '../engine';
 import { clear, el } from './dom';
 
 export interface SearchItem {
@@ -8,30 +8,50 @@ export interface SearchItem {
   lower: string;
 }
 
+/** Longest popup the SPEC allows; also the only cap the matcher needs. */
 const MAX_ROWS = 50;
 
 /** Every item that at least one recipe produces, sorted by name — the only searchable set. */
 export function buildSearchItems(index: CraftIndex): SearchItem[] {
   const items: SearchItem[] = [];
   for (const itemId of index.recipesByProduct.keys()) {
-    const name = index.entryById.get(itemId)?.[0] ?? `Item ${itemId}`;
+    const name = itemName(index, itemId);
     items.push({ id: itemId, name, lower: name.toLowerCase() });
   }
-  items.sort((a, b) => a.name.localeCompare(b.name) || a.id - b.id);
+  items.sort(byNameThenId);
   return items;
 }
 
-/** Substring match, earliest hit first (so a prefix match outranks a mid-word one). */
-export function search(items: readonly SearchItem[], query: string, limit = MAX_ROWS): SearchItem[] {
+/**
+ * Substring match, earliest hit first (so a prefix match outranks a mid-word one), then by name.
+ *
+ * `items` is already in name order, so bucketing by hit position and concatenating the buckets in
+ * order reproduces that ranking without sorting the (up to ~7 000) matches of a one-letter query.
+ */
+export function search(items: readonly SearchItem[], query: string): SearchItem[] {
   const q = query.trim().toLowerCase();
   if (!q) return [];
-  const hits: Array<{ item: SearchItem; at: number }> = [];
+
+  const buckets: SearchItem[][] = [];
   for (const item of items) {
     const at = item.lower.indexOf(q);
-    if (at >= 0) hits.push({ item, at });
+    if (at < 0) continue;
+    const bucket = (buckets[at] ??= []);
+    // Nothing past the MAX_ROWS-th name of a bucket can reach the top rows, and once the best
+    // possible bucket is full no later item can either.
+    if (bucket.length < MAX_ROWS) bucket.push(item);
+    if ((buckets[0]?.length ?? 0) >= MAX_ROWS) break;
   }
-  hits.sort((a, b) => a.at - b.at || a.item.name.localeCompare(b.item.name) || a.item.id - b.item.id);
-  return hits.slice(0, limit).map((h) => h.item);
+
+  const out: SearchItem[] = [];
+  for (const bucket of buckets) {
+    if (!bucket) continue; // sparse: no match started at this offset
+    for (const item of bucket) {
+      out.push(item);
+      if (out.length === MAX_ROWS) return out;
+    }
+  }
+  return out;
 }
 
 export interface SearchOptions {
@@ -41,12 +61,7 @@ export interface SearchOptions {
   onPick: (item: SearchItem) => void;
 }
 
-export interface SearchHandle {
-  /** Set the text without opening the popup (used by the preset buttons). */
-  setValue: (value: string) => void;
-}
-
-export function initSearch(opts: SearchOptions): SearchHandle {
+export function initSearch(opts: SearchOptions): void {
   const { input, popup, items, onPick } = opts;
   let matches: SearchItem[] = [];
   let active = -1;
@@ -59,6 +74,7 @@ export function initSearch(opts: SearchOptions): SearchHandle {
     input.setAttribute('aria-expanded', 'false');
   };
 
+  /** Move the highlight after an arrow key — the rows themselves do not change. */
   const paint = (): void => {
     const rows = Array.from(popup.children) as HTMLElement[];
     rows.forEach((row, i) => {
@@ -70,16 +86,22 @@ export function initSearch(opts: SearchOptions): SearchHandle {
 
   const open = (): void => {
     matches = search(items, input.value);
-    clear(popup);
     if (matches.length === 0) {
       close();
       return;
     }
-    for (const item of matches) {
+    active = 0;
+
+    const frag = document.createDocumentFragment();
+    matches.forEach((item, i) => {
       const row = el('div', {
-        className: 'popup-row',
+        className: i === active ? 'popup-row active' : 'popup-row',
         testid: 'search-option',
-        attrs: { role: 'option', 'data-item-id': String(item.id) },
+        attrs: {
+          role: 'option',
+          'aria-selected': String(i === active),
+          'data-item-id': String(item.id),
+        },
         children: [
           el('span', { className: 'popup-name', text: item.name }),
           el('span', { className: 'popup-id', text: `· ${item.id}` }),
@@ -90,12 +112,11 @@ export function initSearch(opts: SearchOptions): SearchHandle {
         ev.preventDefault();
         pick(item);
       });
-      popup.appendChild(row);
-    }
-    active = 0;
+      frag.appendChild(row);
+    });
+    popup.replaceChildren(frag);
     popup.hidden = false;
     input.setAttribute('aria-expanded', 'true');
-    paint();
   };
 
   const pick = (item: SearchItem): void => {
@@ -133,11 +154,4 @@ export function initSearch(opts: SearchOptions): SearchHandle {
       }
     }
   });
-
-  return {
-    setValue: (value: string) => {
-      input.value = value;
-      close();
-    },
-  };
 }

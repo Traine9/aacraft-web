@@ -389,6 +389,16 @@ describe('decision tree', () => {
     expect(wisp?.unitPrice).toBe(10);
   });
 
+  it('flags which nodes have a recipe at all (the UI only offers a toggle on those)', () => {
+    const res = run();
+    expect(res.tree.craftable).toBe(true); // Ayanad Robe
+    expect(res.tree.children?.[0]?.craftable).toBe(true); // Delphinad Robe, crafted
+    expect(res.tree.children?.[1]?.craftable).toBe(false); // Wisp, a raw material
+    // Still craftable when the user forced it to buy — that is what makes the toggle reversible.
+    const forced = run({ modeOverride: { 2: 'buy' } });
+    expect(forced.tree.children?.[0]?.craftable).toBe(true);
+  });
+
   it('stops at a force-bought node', () => {
     const res = run({ modeOverride: { 2: 'buy' } });
     const delphinad = res.tree.children?.[0];

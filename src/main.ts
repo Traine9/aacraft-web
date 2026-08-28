@@ -1,10 +1,16 @@
 /**
- * AACraft calculator page: one plain state object + one render pass over the engine result.
- * Everything is client-side; `data.json` is fetched once, `buildIndex` runs once.
+ * AACraft calculator page.
+ *
+ * Two paint paths, and only two:
+ *  - `recalc()` runs the engine and repaints — every control that feeds the engine ends here.
+ *  - `repaint()` re-draws `lastResult` — expand/collapse and the buy-list filter stop here.
+ * Engine inputs live in the DOM (`controls()` reads and sanitizes them); only the things the DOM
+ * cannot hold — the target and the per-item overrides — are kept in `state`.
  */
 import './style.css';
 import {
   buildIndex,
+  byNameThenId,
   calculate,
   itemName,
   type BuyRow,
@@ -15,42 +21,43 @@ import {
   type TreeNode,
 } from './engine';
 import { PRESETS } from './presets';
-import { patchBuyList, renderBuyList } from './ui/buylist';
+import {
+  applyFilter,
+  isEditingPrice,
+  isPriceInput,
+  patchBuyList,
+  renderBuyList,
+  PRICE_RESET,
+} from './ui/buylist';
 import { clear, el, gold, int, must } from './ui/dom';
-import { buildSearchItems, initSearch, type SearchHandle, type SearchItem } from './ui/search';
-import { renderTree } from './ui/tree';
+import { buildSearchItems, initSearch, type SearchItem } from './ui/search';
+import { MODE_BTN, renderTree, TREE_TOGGLE } from './ui/tree';
 
 // --------------------------------------------------------------------------------- state
 
 interface State {
   target: number | null;
-  qty: number;
-  goldPerLabor: number;
-  profReduction: boolean;
   /** Per-item unit price typed into the buy list. Reset when the target changes. */
   priceOverride: Record<number, number>;
   /** Per-item forced craft/buy. Reset when the target changes. */
   modeOverride: Record<number, Mode>;
 }
 
-const state: State = {
-  target: null,
-  qty: 1,
-  goldPerLabor: 0.3,
-  profReduction: true,
-  priceOverride: {},
-  modeOverride: {},
-};
+const state: State = { target: null, priceOverride: {}, modeOverride: {} };
 
 /** Pure view state — survives recalcs, never feeds the engine. */
 const view = {
-  filter: '',
   /** Expanded craft nodes, by item id. */
   expanded: new Set<number>(),
+  /** Whether `expanded` has been seeded for the current target (see `seedExpanded`). */
+  seeded: false,
 };
 
 let index: CraftIndex | null = null;
-let searchHandle: SearchHandle | null = null;
+/** The last successful engine result — what `repaint()` draws. */
+let lastResult: CalcResult | null = null;
+/** Pending deferred rebuild after a price field lost focus (see the `focusout` handler). */
+let pendingRebuild: ReturnType<typeof setTimeout> | null = null;
 
 // ----------------------------------------------------------------------------- elements
 
@@ -58,6 +65,7 @@ const els = {
   status: must<HTMLElement>('#status'),
   results: must<HTMLElement>('#results'),
   updated: must<HTMLElement>('#updated'),
+  controls: must<HTMLElement>('.controls'),
   search: must<HTMLInputElement>('#search'),
   searchPopup: must<HTMLElement>('#search-popup'),
   qty: must<HTMLInputElement>('#qty'),
@@ -77,6 +85,18 @@ const els = {
   totalGrand: must<HTMLElement>('#total-grand'),
 };
 
+/** The engine inputs, read straight from the fields and sanitized. */
+function controls(): { qty: number; goldPerLabor: number; profReduction: boolean; filter: string } {
+  const qty = Math.floor(Number(els.qty.value));
+  const gpl = Number(els.goldPerLabor.value);
+  return {
+    qty: Number.isFinite(qty) && qty >= 1 ? qty : 1,
+    goldPerLabor: Number.isFinite(gpl) && gpl >= 0 ? gpl : 0,
+    profReduction: els.prof.checked,
+    filter: els.filter.value,
+  };
+}
+
 // ------------------------------------------------------------------------------- render
 
 function setStatus(message: string, kind: 'info' | 'error' = 'info'): void {
@@ -86,21 +106,24 @@ function setStatus(message: string, kind: 'info' | 'error' = 'info'): void {
   els.results.hidden = true;
 }
 
-/** First render of a new target: open the root and its direct sub-crafts. */
+function clearStatus(): void {
+  els.status.hidden = true;
+  els.results.hidden = false;
+}
+
+/** First paint of a new target: open the root and its direct sub-crafts, once. */
 function seedExpanded(root: TreeNode): void {
-  if (view.expanded.size > 0) return;
+  if (view.seeded) return;
+  view.seeded = true;
   view.expanded.add(root.itemId);
   for (const child of root.children ?? []) {
     if (child.mode === 'craft') view.expanded.add(child.itemId);
   }
 }
 
-const MAX_EXPAND_ALL = 3000;
-
 function expandAll(root: TreeNode): void {
-  let budget = MAX_EXPAND_ALL;
   const walk = (node: TreeNode): void => {
-    if (budget-- <= 0 || !node.children?.length) return;
+    if (!node.children?.length) return;
     view.expanded.add(node.itemId);
     for (const child of node.children) walk(child);
   };
@@ -111,6 +134,7 @@ function expandAll(root: TreeNode): void {
  * A price override can push its item out of the buy list (it became cheaper to craft, or a parent
  * flipped to "buy"). Keep a zero-qty row for it so the edit stays visible, keeps focus while the
  * user is still typing, and can be reset. Totals are untouched — these rows cost nothing.
+ * This is the only place synthetic buy rows are made.
  */
 function withOverrideRows(rows: readonly BuyRow[], idx: CraftIndex): BuyRow[] {
   const present = new Set(rows.map((r) => r.itemId));
@@ -129,84 +153,60 @@ function withOverrideRows(rows: readonly BuyRow[], idx: CraftIndex): BuyRow[] {
     });
   }
   if (extra.length === 0) return rows as BuyRow[];
-  extra.sort((a, b) => a.name.localeCompare(b.name) || a.itemId - b.itemId);
+  extra.sort(byNameThenId);
   return [...rows, ...extra];
 }
 
-/**
- * The single recalc + repaint path. Every control ends up here.
- *
- * `patchBuy` is set while a price field has focus: the table is then updated in place instead of
- * being rebuilt, so the caret is not lost and rows do not jump around mid-edit.
- */
-function render(opts: { patchBuy?: boolean } = {}): void {
+/** Run the engine, then paint. Every control that changes an engine input calls this. */
+function recalc(opts: { patchBuy?: boolean } = {}): void {
+  cancelPendingRebuild();
   if (!index) return;
   if (state.target === null) {
+    lastResult = null;
     setStatus('Pick an item above (or use a preset) to see the full breakdown.');
     return;
   }
 
-  const result: CalcResult = calculate(index, {
+  const c = controls();
+  const result = calculate(index, {
     target: state.target,
-    qty: state.qty,
-    goldPerLabor: state.goldPerLabor,
-    profReduction: state.profReduction,
+    qty: c.qty,
+    goldPerLabor: c.goldPerLabor,
+    profReduction: c.profReduction,
     priceOverride: state.priceOverride,
     modeOverride: state.modeOverride,
   });
-
   if (result.error) {
+    lastResult = null;
     setStatus(result.error, 'error');
     return;
   }
 
-  els.status.hidden = true;
-  els.results.hidden = false;
-  els.targetLine.textContent = `${int(state.qty)} × ${itemName(index, state.target)} (#${state.target})`;
+  lastResult = result;
+  repaint(opts);
+}
+
+/**
+ * Paint `lastResult`. No engine call — view-only controls stop here.
+ *
+ * `patchBuy` is set while a price field has focus: the table is then updated in place instead of
+ * being rebuilt, so the caret is not lost and rows do not jump around mid-edit.
+ */
+function repaint(opts: { patchBuy?: boolean } = {}): void {
+  cancelPendingRebuild();
+  const result = lastResult;
+  if (!result || !index || state.target === null) return;
+  const c = controls();
+
+  clearStatus();
+  els.targetLine.textContent = `${int(c.qty)} × ${itemName(index, state.target)} (#${state.target})`;
 
   seedExpanded(result.tree);
-  const idx = index;
-  renderTree(els.tree, result.tree, {
-    expanded: view.expanded,
-    canCraft: (itemId) => idx.recipesByProduct.has(itemId),
-    modeOverrideOf: (itemId) => state.modeOverride[itemId],
-    onToggleExpand: (itemId) => {
-      if (view.expanded.has(itemId)) view.expanded.delete(itemId);
-      else view.expanded.add(itemId);
-      render();
-    },
-    onSetMode: (itemId, mode) => {
-      if (mode === null) delete state.modeOverride[itemId];
-      else state.modeOverride[itemId] = mode;
-      render();
-    },
-  });
+  renderTree(els.tree, result.tree, view.expanded);
 
-  const buyRows = withOverrideRows(result.buyList, idx);
-  const buyHandlers = {
-    onPriceInput: (itemId: number, raw: string) => {
-      const n = Number(raw);
-      if (raw.trim() === '' || !Number.isFinite(n) || n < 0) delete state.priceOverride[itemId];
-      else state.priceOverride[itemId] = n;
-      render({ patchBuy: true });
-    },
-    onPriceReset: (itemId: number) => {
-      delete state.priceOverride[itemId];
-      render();
-    },
-    // Deferred: a blur caused by clicking another control must not rebuild the DOM under that
-    // click (a removed mousedown target never gets its `click` event). Moving from one price
-    // field straight to the next keeps the table as it is — rebuild once editing really stops.
-    onPriceCommit: () => {
-      setTimeout(() => {
-        const focused = document.activeElement;
-        if (focused instanceof HTMLInputElement && focused.dataset['testid'] === 'price-input') return;
-        render();
-      }, 0);
-    },
-  };
-  if (opts.patchBuy) patchBuyList(els.buyBody, buyRows, buyHandlers);
-  else renderBuyList(els.buyBody, buyRows, view.filter, buyHandlers);
+  const rows = withOverrideRows(result.buyList, index);
+  if (opts.patchBuy) patchBuyList(els.buyBody, rows);
+  else renderBuyList(els.buyBody, rows, c.filter);
 
   const t = result.totals;
   els.totalBuy.textContent = gold(t.buyGold);
@@ -214,17 +214,6 @@ function render(opts: { patchBuy?: boolean } = {}): void {
   els.totalLabor.textContent = int(t.labor);
   els.totalLaborGold.textContent = gold(t.laborGold);
   els.totalGrand.textContent = gold(t.grandTotal);
-
-  // Expand/collapse all need the current tree, so they are (re)wired per render.
-  els.expandAll.onclick = () => {
-    expandAll(result.tree);
-    render();
-  };
-  els.collapseAll.onclick = () => {
-    view.expanded.clear();
-    view.expanded.add(result.tree.itemId);
-    render();
-  };
 }
 
 // ------------------------------------------------------------------------------- actions
@@ -232,67 +221,134 @@ function render(opts: { patchBuy?: boolean } = {}): void {
 /** A new target invalidates every per-item override and the collapse state (SPEC). */
 function setTarget(itemId: number, qty?: number): void {
   state.target = itemId;
-  if (qty !== undefined) {
-    state.qty = qty;
-    els.qty.value = String(qty);
-  }
+  if (qty !== undefined) els.qty.value = String(qty);
   state.priceOverride = {};
   state.modeOverride = {};
   view.expanded.clear();
-  render();
+  view.seeded = false;
+  recalc();
 }
 
-function readQty(): void {
-  const n = Math.floor(Number(els.qty.value));
-  state.qty = Number.isFinite(n) && n >= 1 ? n : 1;
+function setPriceOverride(itemId: number, raw: string): void {
+  const n = Number(raw);
+  if (raw.trim() === '' || !Number.isFinite(n) || n < 0) delete state.priceOverride[itemId];
+  else state.priceOverride[itemId] = n;
 }
 
-function readGoldPerLabor(): void {
-  const n = Number(els.goldPerLabor.value);
-  state.goldPerLabor = Number.isFinite(n) && n >= 0 ? n : 0;
+function cancelPendingRebuild(): void {
+  if (pendingRebuild === null) return;
+  clearTimeout(pendingRebuild);
+  pendingRebuild = null;
+}
+
+/** `data-item-id` of the element (or its closest ancestor) matching `selector`, if any. */
+function itemIdFrom(target: EventTarget | null, selector: string): number | null {
+  if (!(target instanceof Element)) return null;
+  const hit = target.closest<HTMLElement>(selector);
+  const raw = hit?.dataset['itemId'];
+  return raw === undefined ? null : Number(raw);
 }
 
 function renderPresets(idx: CraftIndex): void {
   clear(els.presets);
   els.presets.appendChild(el('span', { className: 'presets-label', text: 'Presets:' }));
   for (const preset of PRESETS) {
+    // data-item-id / data-qty are the e2e hooks for the preset buttons.
     const btn = el('button', {
       className: 'preset',
       text: preset.label,
       testid: 'preset-button',
-      attrs: { type: 'button', 'data-item-id': String(preset.itemId), 'data-qty': String(preset.qty) },
+      attrs: {
+        type: 'button',
+        'data-item-id': String(preset.itemId),
+        'data-qty': String(preset.qty),
+      },
     });
     btn.addEventListener('click', () => {
-      searchHandle?.setValue(itemName(idx, preset.itemId));
+      els.search.value = itemName(idx, preset.itemId);
       setTarget(preset.itemId, preset.qty);
     });
     els.presets.appendChild(btn);
   }
 }
 
+/** Everything is wired exactly once, here; the render passes only paint. */
 function wireControls(idx: CraftIndex, items: readonly SearchItem[]): void {
-  searchHandle = initSearch({
+  initSearch({
     input: els.search,
     popup: els.searchPopup,
     items,
     onPick: (item) => setTarget(item.id),
   });
 
-  els.qty.addEventListener('input', () => {
-    readQty();
-    render();
+  // Quantity, gold-per-labor and the proficiency checkbox all live in the same bar and all feed
+  // the engine; the search box is the one input there that does not.
+  els.controls.addEventListener('input', (ev) => {
+    if (ev.target === els.search) return;
+    recalc();
   });
-  els.goldPerLabor.addEventListener('input', () => {
-    readGoldPerLabor();
-    render();
+
+  // View only: hide rows, keep the tree (and its scroll position) exactly as it is.
+  els.filter.addEventListener('input', () => applyFilter(els.buyBody, els.filter.value));
+
+  els.expandAll.addEventListener('click', () => {
+    if (!lastResult) return;
+    expandAll(lastResult.tree);
+    repaint();
   });
-  els.prof.addEventListener('change', () => {
-    state.profReduction = els.prof.checked;
-    render();
+  els.collapseAll.addEventListener('click', () => {
+    if (!lastResult) return;
+    view.expanded.clear();
+    repaint();
   });
-  els.filter.addEventListener('input', () => {
-    view.filter = els.filter.value;
-    render();
+
+  // --- buy list: one listener per event type, for the whole table ---------------------------
+  els.buyBody.addEventListener('input', (ev) => {
+    const input = ev.target;
+    if (!isPriceInput(input)) return;
+    const itemId = Number(input.dataset['itemId']);
+    setPriceOverride(itemId, input.value);
+    recalc({ patchBuy: true });
+  });
+  // Deferred: a blur caused by clicking another control must not rebuild the DOM under that
+  // click (a removed mousedown target never gets its `click` event). Moving from one price
+  // field straight to the next keeps the table as it is — rebuild once editing really stops.
+  els.buyBody.addEventListener('focusout', (ev) => {
+    if (!isPriceInput(ev.target)) return;
+    // Focus going to another control of this table (the next price field, a reset button) is
+    // still editing: those handlers repaint by themselves, and a rebuild between the user's
+    // mousedown and mouseup would delete the very button they are pressing.
+    if (ev.relatedTarget instanceof Node && els.buyBody.contains(ev.relatedTarget)) return;
+    cancelPendingRebuild();
+    pendingRebuild = setTimeout(() => {
+      pendingRebuild = null;
+      if (!isEditingPrice()) repaint();
+    }, 0);
+  });
+  els.buyBody.addEventListener('click', (ev) => {
+    const itemId = itemIdFrom(ev.target, `[data-testid="${PRICE_RESET}"]`);
+    if (itemId === null) return;
+    delete state.priceOverride[itemId];
+    recalc();
+  });
+
+  // --- craft tree: twisties and craft/buy toggles -------------------------------------------
+  els.tree.addEventListener('click', (ev) => {
+    const toggled = itemIdFrom(ev.target, `[data-testid="${TREE_TOGGLE}"]`);
+    if (toggled !== null) {
+      if (!view.expanded.delete(toggled)) view.expanded.add(toggled);
+      repaint();
+      return;
+    }
+
+    if (!(ev.target instanceof Element)) return;
+    const btn = ev.target.closest<HTMLButtonElement>(`.${MODE_BTN}`);
+    if (!btn) return;
+    const itemId = Number(btn.dataset['itemId']);
+    // The pressed button is the active override: clicking it again returns the item to automatic.
+    if (btn.getAttribute('aria-pressed') === 'true') delete state.modeOverride[itemId];
+    else state.modeOverride[itemId] = btn.dataset['mode'] === 'buy' ? 'buy' : 'craft';
+    recalc();
   });
 
   renderPresets(idx);
@@ -308,12 +364,8 @@ async function boot(): Promise<void> {
     const data = (await res.json()) as DataSet;
     index = buildIndex(data);
     els.updated.textContent = data.updated;
-    readQty();
-    readGoldPerLabor();
-    state.profReduction = els.prof.checked;
-    view.filter = els.filter.value;
     wireControls(index, buildSearchItems(index));
-    render();
+    recalc();
   } catch (err) {
     setStatus(`Could not load data.json — ${err instanceof Error ? err.message : String(err)}`, 'error');
   }
