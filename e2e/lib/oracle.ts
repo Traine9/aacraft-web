@@ -148,6 +148,49 @@ export function firstForcibleSubCraft(base: EngineInputs): Subject {
   return { itemId: child.itemId, name: child.name };
 }
 
+/** A multi-recipe craft node plus a non-default recipe to switch it to. */
+export interface RecipeChoice extends Subject {
+  defaultRecipeId: number;
+  altRecipeId: number;
+  /** All its recipe ids, in the engine's option order (the default first). */
+  recipeIds: number[];
+}
+
+/**
+ * The shallowest craft node made by several recipes that is still IN the tree after switching to
+ * its first alternative — the switch may flip it to buy (a valid outcome the selector survives),
+ * but if the dearer material flips a PARENT to buy, the node leaves the tree along with the
+ * selector the spec asserts on; such candidates are skipped.
+ */
+export function firstRecipeChoice(base: EngineInputs): RecipeChoice {
+  const candidates = new Map<number, RecipeChoice & { depth: number }>();
+  walkTree(expected(base).tree, (node, depth) => {
+    if (node.mode !== 'craft' || !node.recipeOptions || candidates.has(node.itemId)) return;
+    const active = node.recipeOptions.find((o) => o.selected);
+    const alt = node.recipeOptions.find((o) => !o.selected);
+    if (!active || !alt) return;
+    candidates.set(node.itemId, {
+      itemId: node.itemId,
+      name: node.name,
+      defaultRecipeId: active.id,
+      altRecipeId: alt.id,
+      recipeIds: node.recipeOptions.map((o) => o.id),
+      depth,
+    });
+  });
+  const sorted = [...candidates.values()].sort(byDepthThenId);
+  for (const { depth: _depth, ...choice } of sorted) {
+    const switched = expected({ ...base, recipeOverride: { [choice.itemId]: choice.altRecipeId } });
+    if (modesByItem(switched).has(choice.itemId)) return choice;
+  }
+  throw new Error('no multi-recipe craft node in this breakdown — the recipe spec has no subject');
+}
+
+/** The one "pick the shallowest subject" ordering, shared by the subject finders. */
+function byDepthThenId(a: Subject & { depth: number }, b: Subject & { depth: number }): number {
+  return a.depth - b.depth || a.itemId - b.itemId;
+}
+
 /** Depth-first walk of a decision tree, parents before children (i.e. DOM order). */
 function walkTree(node: TreeNode, visit: (node: TreeNode, depth: number) => void): void {
   const go = (n: TreeNode, depth: number): void => {
@@ -181,7 +224,7 @@ function findFlip(base: EngineInputs, lowModes: Map<number, Mode>, high: number)
     if (node.mode !== 'buy' || lowModes.get(node.itemId) !== 'craft') return;
     candidates.push({ itemId: node.itemId, name: node.name, depth });
   });
-  candidates.sort((a, b) => a.depth - b.depth || a.itemId - b.itemId);
+  candidates.sort(byDepthThenId);
   const best = candidates[0];
   return best ? { itemId: best.itemId, name: best.name } : null;
 }

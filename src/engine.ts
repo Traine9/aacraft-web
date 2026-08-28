@@ -118,6 +118,11 @@ export interface TreeNode {
   craftable: boolean;
   /** True when this occurrence was forced to `buy` to break a recipe cycle. */
   cycleBroken: boolean;
+  /** Present when several recipes make the item — what the UI's recipe selector offers, on buy
+   *  nodes too (picking a cheaper recipe there can flip the decision back to craft). In default
+   *  order (`compareRecipes`, the default first); `selected` marks the recipe currently in use;
+   *  `labor` is effective (proficiency applied), like every other labor number emitted. */
+  recipeOptions?: Array<{ id: number; name: string; out: number; labor: number; selected: boolean }>;
   recipeId?: number;
   recipeName?: string;
   crafts?: number;
@@ -140,16 +145,20 @@ export interface CalcResult {
 export interface CraftIndex {
   data: DataSet;
   recipeById: ReadonlyMap<number, Recipe>;
-  /** Recipes keyed by the item they produce, sorted by (labor per output unit, id). */
+  /** Recipes keyed by the item they produce, the default recipe first (see `compareRecipes`). */
   recipesByProduct: ReadonlyMap<number, Recipe[]>;
   /** `data.items` keyed by numeric id, so lookups need no per-call `String(id)`. */
   entryById: ReadonlyMap<number, ItemEntry>;
 }
 
-/** Cheaper of two recipes for the same item: lowest labor per output unit, ties → lowest id. */
+/** Default-recipe order for one item: biggest batch first (most output per craft — the ×100
+ *  "Batch Processing" recipes beat the ×1 ones); ties → lowest labor per output unit, then lowest id. */
 function compareRecipes(a: Recipe, b: Recipe): number {
-  const la = a.labor / outAmount(a);
-  const lb = b.labor / outAmount(b);
+  const oa = outAmount(a);
+  const ob = outAmount(b);
+  if (oa !== ob) return ob - oa;
+  const la = a.labor / oa;
+  const lb = b.labor / ob;
   if (la !== lb) return la - lb;
   return a.id - b.id;
 }
@@ -252,7 +261,7 @@ class Calculator {
     return { price: itemPrice(this.index, itemId), overridden: false };
   }
 
-  /** The recipe used for an item: explicit override, else the cheapest-labor default. */
+  /** The recipe used for an item: explicit override, else the biggest-batch default. */
   recipeFor(itemId: number): Recipe | null {
     const ovId = this.recipeOverride[itemId];
     if (ovId !== undefined) {
@@ -553,6 +562,18 @@ function buildTree(
       craftable: index.recipesByProduct.has(itemId),
       cycleBroken: false,
     };
+
+    const options = index.recipesByProduct.get(itemId);
+    if (options && options.length > 1) {
+      const active = calc.recipeFor(itemId);
+      node.recipeOptions = options.map((r) => ({
+        id: r.id,
+        name: r.name,
+        out: outAmount(r),
+        labor: calc.labor(r),
+        selected: r.id === active?.id,
+      }));
+    }
 
     // The target (forceCraft) is always crafted, per SPEC; everything else follows the decision.
     const recipe = forceCraft ? targetRecipe : res.mode === 'craft' ? res.recipe : null;

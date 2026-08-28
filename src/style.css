@@ -374,16 +374,34 @@ button {
   white-space: nowrap;
 }
 
+/* The two small per-node controls share one look. */
+.recipe-select,
+.mode-btn {
+  background: var(--bg-input);
+  border: 1px solid var(--line);
+  color: var(--text-dim);
+  font-size: 11px;
+}
+
+.recipe-select {
+  border-radius: 4px;
+  padding: 1px 4px;
+  max-width: 300px;
+  flex: none;
+}
+
+.recipe-select:hover,
+.recipe-select:focus-visible {
+  border-color: var(--accent);
+  color: var(--text);
+}
+
 .mode-toggle {
   display: inline-flex;
   flex: none;
 }
 
 .mode-btn {
-  background: var(--bg-input);
-  border: 1px solid var(--line);
-  color: var(--text-dim);
-  font-size: 11px;
   padding: 1px 7px;
 }
 

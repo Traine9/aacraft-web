@@ -59,8 +59,8 @@ function fixture(): DataSet {
       // Tie-break: same labor per output unit -> lowest recipe id wins.
       { id: 110, name: 'Tie Item (b)', out: [11, 1], labor: 10, fee: 0, mats: [[13, 1]] },
       { id: 109, name: 'Tie Item (a)', out: [11, 1], labor: 10, fee: 0, mats: [[13, 2]] },
-      // Labor per OUTPUT UNIT decides: 12/2 = 6 beats 10/1 = 10, despite higher absolute labor.
-      { id: 120, name: 'Batch Item', out: [12, 1], labor: 10, fee: 0, mats: [[13, 1]] },
+      // OUTPUT AMOUNT decides: x2 beats x1 even though 120 is far cheaper per unit (1 vs 6 labor).
+      { id: 120, name: 'Batch Item', out: [12, 1], labor: 1, fee: 0, mats: [[13, 1]] },
       { id: 121, name: 'Batch Item x2', out: [12, 2], labor: 12, fee: 0, mats: [[13, 3]] },
     ],
   };
@@ -271,14 +271,14 @@ describe('modeOverride', () => {
 });
 
 describe('recipeOverride', () => {
-  it('defaults to the lowest labor per output unit', () => {
-    // 121 makes 2 for 12 labor (6/unit) and beats 120 (10/unit) despite costing more per craft.
+  it('defaults to the biggest batch (most output per craft)', () => {
+    // 121 makes 2 per craft and beats 120 (x1) even though 120 is much cheaper per unit.
     const res = run({ target: 12 });
     expect(step(res, 12)?.recipeId).toBe(121);
     expect(step(res, 12)?.surplus).toBe(1);
   });
 
-  it('breaks ties on the lowest recipe id', () => {
+  it('breaks an output-amount tie on the lowest labor per unit, then the lowest recipe id', () => {
     const res = run({ target: 11 });
     expect(step(res, 11)?.recipeId).toBe(109);
     expect(buy(res, 13)?.qty).toBe(2); // r109 uses 2 filler, r110 uses 1
@@ -301,6 +301,33 @@ describe('recipeOverride', () => {
   it('falls back to the default when the override does not make the item', () => {
     const res = run({ target: 2, recipeOverride: { 2: 101 } });
     expect(step(res, 2)?.recipeId).toBe(102);
+  });
+
+  it('lists the alternatives on multi-recipe tree nodes, active one marked', () => {
+    const res = run({ target: 2 });
+    // Delphinad has two recipes (102 default, 106 alt); its options drive the UI selector.
+    expect(res.tree.recipeOptions?.map((o) => [o.id, o.selected])).toEqual([
+      [102, true],
+      [106, false],
+    ]);
+    // Single-recipe (Magnificent) and raw (Sand via alt path) nodes offer no selector.
+    const magnificent = res.tree.children?.[0];
+    expect(magnificent?.recipeOptions).toBeUndefined();
+
+    const alt = run({ target: 2, recipeOverride: { 2: 106 } });
+    expect(alt.tree.recipeOptions?.find((o) => o.selected)?.id).toBe(106);
+    // labor is EFFECTIVE (proficiency applied), like every other labor number: ceil(50 * 0.7).
+    expect(alt.tree.recipeOptions?.[0]).toMatchObject({ id: 102, name: 'Delphinad Robe', out: 1, labor: 35 });
+  });
+
+  it('keeps the alternatives on bought nodes — picking a recipe there can flip them back', () => {
+    const res = run({ modeOverride: { 2: 'buy' } });
+    const delphinad = res.tree.children?.[0];
+    expect(delphinad?.mode).toBe('buy');
+    expect(delphinad?.recipeOptions?.map((o) => [o.id, o.selected])).toEqual([
+      [102, true],
+      [106, false],
+    ]);
   });
 });
 

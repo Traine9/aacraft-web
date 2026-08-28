@@ -203,9 +203,32 @@ export class CalculatorPage {
     return ids.map(Number);
   }
 
-  /** The craft/buy buttons of a node — scoped to its own row so a child's buttons never match. */
+  /** A control in the node's OWN row — `> .node-row`, so a child node's controls never match. */
+  private rowPart(itemId: number, testid: string): Locator {
+    return this.treeNode(itemId).locator(`> .node-row ${sel(testid)}`);
+  }
+
+  /** The craft/buy buttons of a node. */
   nodeModeButton(itemId: number, mode: 'craft' | 'buy'): Locator {
-    return this.treeNode(itemId).locator(`> .node-row ${sel(`node-mode-${mode}`)}`);
+    return this.rowPart(itemId, `node-mode-${mode}`);
+  }
+
+  /** The recipe `<select>` of a multi-recipe node — its value is the active recipe id. */
+  recipeSelect(itemId: number): Locator {
+    return this.rowPart(itemId, 'recipe-select');
+  }
+
+  /** Recipe ids the node's select offers, in render order. */
+  async recipeOptionIds(itemId: number): Promise<number[]> {
+    const values = await this.recipeSelect(itemId)
+      .locator('option')
+      .evaluateAll((options) => options.map((o) => (o as HTMLOptionElement).value));
+    return values.map(Number);
+  }
+
+  /** Pick a recipe for an item, by recipe id. */
+  async chooseRecipe(itemId: number, recipeId: number): Promise<void> {
+    await this.recipeSelect(itemId).selectOption(String(recipeId));
   }
 
   /** A node's own child list — `> `, because the descendants have `.node-children` of their own. */
@@ -214,7 +237,7 @@ export class CalculatorPage {
   }
 
   private nodeBadge(itemId: number, kind: string): Locator {
-    return this.treeNode(itemId).locator(`> .node-row ${sel(`badge-${kind}`)}`);
+    return this.rowPart(itemId, `badge-${kind}`);
   }
 
   /** "price set" — the item's unit price was typed in. Independent of the mode badge. */

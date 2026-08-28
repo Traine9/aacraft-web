@@ -11,6 +11,9 @@ import { badge, clear, el, gold, int, price, setFlags } from './dom';
 export const TREE_TOGGLE = 'tree-toggle';
 /** Class of the craft/buy buttons; each carries `data-item-id` and `data-mode`. */
 export const MODE_BTN = 'mode-btn';
+/** Test id of the recipe `<select>` on multi-recipe craft nodes; carries `data-item-id`,
+ *  option values are recipe ids. `main.ts` handles its `change` with a delegated listener. */
+export const RECIPE_SELECT = 'recipe-select';
 
 /** @param expanded item ids of the open craft nodes — view state that survives a recalc. */
 export function renderTree(container: HTMLElement, root: TreeNode, expanded: ReadonlySet<number>): void {
@@ -64,11 +67,30 @@ function nodeEl(node: TreeNode, expandedIds: ReadonlySet<number>, depth: number)
     );
   }
 
+  // Several recipes make this item — let the user pick which one to use. Rendered on buy nodes
+  // too: switching to a cheaper recipe there can flip the decision back to craft.
+  if (node.recipeOptions) {
+    row.appendChild(
+      el('select', {
+        className: 'recipe-select',
+        testid: RECIPE_SELECT,
+        attrs: { 'data-item-id': String(node.itemId), title: 'Recipe — this item can be crafted several ways' },
+        children: node.recipeOptions.map((opt) =>
+          el('option', {
+            text: `${opt.name} (×${int(opt.out)}, ${int(opt.labor)} labor)`,
+            attrs: { value: String(opt.id), ...(opt.selected ? { selected: '' } : {}) },
+          }),
+        ),
+      }),
+    );
+  }
+
   // A crafted item without an AH price is normal (that is *why* it is crafted); the flag only
   // matters where a missing price understates the bill — on a bought node.
   if (node.noPrice && node.mode === 'buy') row.appendChild(badge('noprice', 'no price'));
   if (node.cycleBroken) row.appendChild(badge('cycle', 'cycle → buy'));
-  // Two independent overrides: a node can carry both, so they are two distinct badge kinds.
+  // Price and mode overrides are independent — a node can carry both badges. The third override,
+  // the recipe choice, needs none: its select shows the non-default pick on its face.
   if (node.priceOverridden) row.appendChild(badge('price-override', 'price set'));
   if (node.modeOverridden) row.appendChild(badge('mode-forced', 'forced'));
 

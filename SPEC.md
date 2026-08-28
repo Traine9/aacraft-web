@@ -55,7 +55,8 @@ Inputs:
   - `priceOverride[itemId]` — user-edited unit price (replaces AH price everywhere).
   - `modeOverride[itemId]: 'craft' | 'buy'` — force the decision.
   - `recipeOverride[itemId]: recipeId` — when several recipes produce the item; default recipe =
-    lowest (labor / output amount), ties → lowest recipe id.
+    biggest batch (highest output amount per craft), ties → lowest (labor / output amount),
+    then lowest recipe id.
 
 Decision per node (memoized on itemId, cycle-safe — on a recipe cycle treat the inner
 occurrence as buy):
@@ -84,7 +85,10 @@ Single page, desktop-first, works standalone from `dist/` so it can be dropped i
   unrelated item (Blazing Sun Gauntlets); presets take item ids. Clicking a preset fills
   target+qty and recalcs.
 - Craft tree: collapsible tree of the decision (craft nodes show crafts × labor; buy nodes show
-  qty × price); per craftable node a craft/buy toggle wired to `modeOverride`.
+  qty × price); per craftable node a craft/buy toggle wired to `modeOverride`. Nodes whose item
+  several recipes make (bought ones too — a cheaper recipe can flip the decision back to craft)
+  carry a recipe `<select>` (options = recipe name, output amount, effective labor; engine default
+  first) wired to `recipeOverride`; picking the default back clears the override.
 - **Buy list** table: each row has an editable unit-price `<input>` (prefilled from AH price;
   editing sets `priceOverride` and recalcs live), qty, row total; a **filter** text input above it
   that live-filters rows by substring (the "Darugir-style" search); totals footer

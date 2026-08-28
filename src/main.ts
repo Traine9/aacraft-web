@@ -31,7 +31,7 @@ import {
 } from './ui/buylist';
 import { clear, el, gold, int, must } from './ui/dom';
 import { buildSearchItems, initSearch, type SearchItem } from './ui/search';
-import { MODE_BTN, renderTree, TREE_TOGGLE } from './ui/tree';
+import { MODE_BTN, RECIPE_SELECT, renderTree, TREE_TOGGLE } from './ui/tree';
 
 // --------------------------------------------------------------------------------- state
 
@@ -41,9 +41,11 @@ interface State {
   priceOverride: Record<number, number>;
   /** Per-item forced craft/buy. Reset when the target changes. */
   modeOverride: Record<number, Mode>;
+  /** Per-item recipe choice, for items several recipes make. Reset when the target changes. */
+  recipeOverride: Record<number, number>;
 }
 
-const state: State = { target: null, priceOverride: {}, modeOverride: {} };
+const state: State = { target: null, priceOverride: {}, modeOverride: {}, recipeOverride: {} };
 
 /** Pure view state — survives recalcs, never feeds the engine. */
 const view = {
@@ -175,6 +177,7 @@ function recalc(opts: { patchBuy?: boolean } = {}): void {
     profReduction: c.profReduction,
     priceOverride: state.priceOverride,
     modeOverride: state.modeOverride,
+    recipeOverride: state.recipeOverride,
   });
   if (result.error) {
     lastResult = null;
@@ -224,6 +227,7 @@ function setTarget(itemId: number, qty?: number): void {
   if (qty !== undefined) els.qty.value = String(qty);
   state.priceOverride = {};
   state.modeOverride = {};
+  state.recipeOverride = {};
   view.expanded.clear();
   view.seeded = false;
   recalc();
@@ -348,6 +352,18 @@ function wireControls(idx: CraftIndex, items: readonly SearchItem[]): void {
     // The pressed button is the active override: clicking it again returns the item to automatic.
     if (btn.getAttribute('aria-pressed') === 'true') delete state.modeOverride[itemId];
     else state.modeOverride[itemId] = btn.dataset['mode'] === 'buy' ? 'buy' : 'craft';
+    recalc();
+  });
+
+  // Recipe selector on multi-recipe nodes. The first option is the engine's default (the select
+  // renders them in default order), so picking it back returns the item to automatic — every
+  // override in the app has a way back to auto.
+  els.tree.addEventListener('change', (ev) => {
+    if (!(ev.target instanceof HTMLSelectElement)) return;
+    const itemId = itemIdFrom(ev.target, `[data-testid="${RECIPE_SELECT}"]`);
+    if (itemId === null) return;
+    if (ev.target.value === ev.target.options[0]?.value) delete state.recipeOverride[itemId];
+    else state.recipeOverride[itemId] = Number(ev.target.value);
     recalc();
   });
 
