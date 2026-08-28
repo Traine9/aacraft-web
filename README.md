@@ -13,8 +13,8 @@ npm install
 npm run data      # generate public/data.json from ../AACraft dumps (required once)
 npm run dev       # dev server
 npm run build     # production build into dist/ (relative base — embeddable at any subpath)
-npm test          # 39 engine unit tests (vitest)
-npm run e2e       # 18 Playwright tests (builds data + app, serves via vite preview)
+npm test          # 41 engine unit tests (vitest)
+npm run e2e       # 20 Playwright tests (builds data + app, serves via vite preview)
 ```
 
 ## Embedding
