@@ -16,17 +16,16 @@ const base = mainPresetInputs();
 const OFF_STEP = 27;
 
 test.describe('proficiency', () => {
-  test.beforeEach(async ({ calc }) => {
-    await calc.openWithPreset(preset.itemId);
-  });
-
+  // Only the two repricing tests need a breakdown; the markup pin below asserts nothing about it.
   test('offers 0…40 in steps of 5, with the default preselected', async ({ calc }) => {
+    await calc.goto();
     expect(await calc.profOptionValues()).toEqual(UI_PROF_STEPS);
     await expect(calc.profSelect).toHaveValue(String(UI_PROF_PERCENT));
     await expect(calc.profExact, 'the exact field starts closed').toBeHidden();
   });
 
   test('every step reprices the labor bill exactly as the engine says', async ({ calc }) => {
+    await calc.openWithPreset(preset.itemId);
     // Two steps either side of the default, so the assertion covers more and less proficiency.
     for (const percent of [0, 15, 40]) {
       await calc.setProficiency(percent);
@@ -40,6 +39,7 @@ test.describe('proficiency', () => {
   test('the "+" field sets an exact percentage and hands control back when closed', async ({
     calc,
   }) => {
+    await calc.openWithPreset(preset.itemId);
     const atDefault = await calc.totals();
 
     await calc.setExactProficiency(OFF_STEP);

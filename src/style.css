@@ -136,24 +136,6 @@ h1 .sub {
   gap: 6px;
 }
 
-.prof-control select {
-  background: var(--bg-input);
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  color: var(--text);
-  padding: 7px 9px;
-  font: inherit;
-  width: 96px;
-}
-
-.prof-control select:disabled {
-  color: var(--text-dim);
-}
-
-.prof-control input[type='number'] {
-  width: 96px;
-}
-
 /* Square, same height as the field it sits beside. */
 .prof-exact-toggle {
   width: 32px;
@@ -163,14 +145,12 @@ h1 .sub {
   flex: none;
 }
 
-.prof-exact-toggle[aria-pressed='true'] {
-  border-color: var(--accent);
-  color: var(--accent);
-}
-
+/* The one field skin. The proficiency `<select>` joins it so it cannot drift from its neighbours;
+ * the widths below come after, because they share this rule's specificity and must win. */
 input[type='text'],
 input[type='number'],
-input[type='search'] {
+input[type='search'],
+.prof-control select {
   background: var(--bg-input);
   border: 1px solid var(--line);
   border-radius: var(--radius);
@@ -180,17 +160,20 @@ input[type='search'] {
   width: 100%;
 }
 
+.prof-control select,
+.prof-control input[type='number'] {
+  width: 96px;
+}
+
+.prof-control select:disabled {
+  color: var(--text-dim);
+}
+
 input:focus-visible,
+select:focus-visible,
 button:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 1px;
-}
-
-input[type='checkbox'] {
-  accent-color: var(--accent);
-  width: 15px;
-  height: 15px;
-  margin: 0;
 }
 
 .hint {
@@ -461,7 +444,10 @@ button {
   background: var(--bg-raised);
 }
 
-.mode-btn[aria-pressed='true'] {
+/* The one "this control is holding an override" look, shared by the craft/buy buttons and the
+ * proficiency "+" toggle — without the background, pressed looked identical to plain hover. */
+.mode-btn[aria-pressed='true'],
+.prof-exact-toggle[aria-pressed='true'] {
   background: var(--accent-dim);
   color: var(--accent);
   border-color: var(--accent);

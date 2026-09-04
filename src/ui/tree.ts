@@ -15,6 +15,11 @@ export const MODE_BTN = 'mode-btn';
  *  option values are recipe ids. `main.ts` handles its `change` with a delegated listener. */
 export const RECIPE_SELECT = 'recipe-select';
 
+/** How a batch size is spelled — once, so the node's name tag and the recipe options agree. */
+function batchLabel(out: number): string {
+  return `${int(out)}x`;
+}
+
 /** @param expanded item ids of the open craft nodes — view state that survives a recalc. */
 export function renderTree(container: HTMLElement, root: TreeNode, expanded: ReadonlySet<number>): void {
   clear(container);
@@ -46,18 +51,16 @@ function nodeEl(node: TreeNode, expandedIds: ReadonlySet<number>, depth: number)
 
   row.appendChild(el('span', { className: 'node-name', text: node.name }));
 
-  // Batch recipes are part of the item's identity here — "Fine Lumber 10x" reads as one label.
-  // Kept out of `.node-name` so the name span stays the bare item name.
-  const batch = node.mode === 'craft' ? (node.outAmount ?? 1) : 1;
-  if (batch > 1) {
-    row.appendChild(el('span', { className: 'batch-tag', testid: 'batch-tag', text: `${int(batch)}x` }));
-  }
-
   if (node.mode === 'craft') {
     const crafts = node.crafts ?? 0;
     const laborEach = node.laborEach ?? 0;
     const out = node.outAmount ?? 1;
     const produced = crafts * out;
+    // Batch recipes are part of the item's identity here — "Fine Lumber 10x" reads as one label.
+    // Kept out of `.node-name` so the name span stays the bare item name.
+    if (out > 1) {
+      row.appendChild(el('span', { className: 'batch-tag', testid: 'batch-tag', text: batchLabel(out) }));
+    }
     row.appendChild(
       el('span', {
         className: 'node-detail',
@@ -100,9 +103,7 @@ function nodeEl(node: TreeNode, expandedIds: ReadonlySet<number>, depth: number)
         attrs: { 'data-item-id': String(node.itemId), title: 'Recipe — this item can be crafted several ways' },
         children: node.recipeOptions.map((opt) =>
           el('option', {
-            text: opt.out > 1
-              ? `${opt.name} ${int(opt.out)}x (${int(opt.labor)} labor)`
-              : `${opt.name} (${int(opt.labor)} labor)`,
+            text: `${opt.name}${opt.out > 1 ? ` ${batchLabel(opt.out)}` : ''} (${int(opt.labor)} labor)`,
             attrs: { value: String(opt.id), ...(opt.selected ? { selected: '' } : {}) },
           }),
         ),

@@ -81,6 +81,9 @@ const run = (opts: Partial<CalcOptions> = {}): CalcResult =>
 /** The full craft chain for the baseline run: Cloth -> Magnificent -> Delphinad -> Ayanad. */
 const BASELINE_STEPS = [5, 4, 2, 1];
 
+/** The proficiency percentages the UI's preset list offers (`e2e/lib/oracle.ts` pins the markup). */
+const UI_STEPS = [0, 5, 10, 15, 20, 25, 30, 35, 40];
+
 const step = (res: CalcResult, itemId: number): Step | undefined =>
   res.steps.find((s) => s.itemId === itemId);
 const buy = (res: CalcResult, itemId: number): BuyRow | undefined =>
@@ -100,7 +103,7 @@ describe('effectiveLabor', () => {
 
   it('covers the whole 0…40 range the UI offers, in 5 % steps', () => {
     const at = (p: number) => effectiveLabor(100, p);
-    expect([0, 5, 10, 15, 20, 25, 30, 35, 40].map(at)).toEqual([100, 95, 90, 85, 80, 75, 70, 65, 60]);
+    expect(UI_STEPS.map(at)).toEqual([100, 95, 90, 85, 80, 75, 70, 65, 60]);
     // Exact, non-step values work identically — that is what the "+" field is for.
     expect(effectiveLabor(100, 27)).toBe(73);
     expect(effectiveLabor(650, 27)).toBe(475); // ceil(474.5)
@@ -234,9 +237,8 @@ describe('profPercent', () => {
     expect(step(at0, 1)?.laborEach).toBe(100);
 
     // Every step the UI offers is monotonic: more proficiency is never more labor.
-    const byStep = [0, 5, 10, 15, 20, 25, 30, 35, 40].map((p) => run({ profPercent: p }).totals.labor);
+    const byStep = UI_STEPS.map((p) => run({ profPercent: p }).totals.labor);
     expect(byStep).toEqual([...byStep].sort((a, b) => b - a));
-    expect(byStep.at(-1)).toBe(run({ profPercent: 40 }).totals.labor);
   });
 
   it('defaults to 30%', () => {

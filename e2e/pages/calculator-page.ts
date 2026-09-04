@@ -170,10 +170,7 @@ export class CalculatorPage {
 
   /** Percentages the preset list offers, in render order. */
   async profOptionValues(): Promise<number[]> {
-    const values = await this.profSelect
-      .locator('option')
-      .evaluateAll((options) => options.map((o) => (o as HTMLOptionElement).value));
-    return values.map(Number);
+    return this.optionValues(this.profSelect);
   }
 
   /** Press "+" / "−": opens the exact-percent field over the list, or drops back to the list. */
@@ -259,7 +256,12 @@ export class CalculatorPage {
 
   /** Recipe ids the node's select offers, in render order. */
   async recipeOptionIds(itemId: number): Promise<number[]> {
-    const values = await this.recipeSelect(itemId)
+    return this.optionValues(this.recipeSelect(itemId));
+  }
+
+  /** The numeric `value`s of a `<select>`'s options, in render order — the one place that cast lives. */
+  private async optionValues(select: Locator): Promise<number[]> {
+    const values = await select
       .locator('option')
       .evaluateAll((options) => options.map((o) => (o as HTMLOptionElement).value));
     return values.map(Number);

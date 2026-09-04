@@ -96,12 +96,12 @@ Single page, desktop-first, works standalone from `dist/` so it can be dropped i
   recipe is a batch (`outAmount > 1`) carries the batch size next to its name (`Fine Lumber 10x`)
   and states what that adds up to — `→ produced for needed` — plus a `+K spare` badge for the
   overshoot, since whole crafts must be paid for in full and the materials below are otherwise
-  inexplicable (one craft of Kraken's Might buys reagents for 100). Recipe options are labelled
-  the same way: `<recipe name> 10x (70 labor)`, or just `(70 labor)` for a x1 recipe.
-  Nodes whose item
-  several recipes make (bought ones too — a cheaper recipe can flip the decision back to craft)
-  carry a recipe `<select>` (options = recipe name, output amount, effective labor; engine default
-  first) wired to `recipeOverride`; picking the default back clears the override.
+  inexplicable (one craft of Kraken's Might buys reagents for 100). Nodes whose item several
+  recipes make (bought ones too — a cheaper recipe can flip the decision back to craft) carry a
+  recipe `<select>`, engine default first, wired to `recipeOverride`; picking the default back
+  clears the override. Its options carry the batch size the same way the node tag does:
+  `<recipe name> 10x (70 labor)`, or `<recipe name> (70 labor)` for a x1 recipe — the labor is
+  effective labor, after proficiency.
 - **Buy list** table: each row has an editable unit-price `<input>` (prefilled from AH price;
   editing sets `priceOverride` and recalcs live), qty, row total; a **filter** text input above it
   that live-filters rows by substring (the "Darugir-style" search); totals footer

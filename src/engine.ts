@@ -222,15 +222,16 @@ export function clampProfPercent(percent: number | undefined): number {
 }
 
 /**
- * Labor left for one craft after a proficiency discount of `percent`, rounded up.
+ * Labor left for one craft after a proficiency discount of `percent`, rounded up. Takes a percent
+ * that has already been through `clampProfPercent` — the `Calculator` constructor is the single
+ * boundary where that happens, so this stays plain arithmetic.
  *
  * Multiplies before dividing (`labor * (100 - p) / 100`, not `labor * 0.7`) so binary floating
  * point cannot turn 455 into 455.00000000000006 and then ceil it to 456.
  */
 export function effectiveLabor(labor: number, percent: number): number {
-  const p = clampProfPercent(percent);
-  if (p === 0) return labor;
-  return Math.ceil((labor * (100 - p)) / 100);
+  if (percent === 0) return labor;
+  return Math.ceil((labor * (100 - percent)) / 100);
 }
 
 /** Units produced by one craft (a recipe never yields less than one). */
