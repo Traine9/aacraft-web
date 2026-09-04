@@ -3,3 +3,5 @@ dist/
 public/data.json
 e2e/reports/
 *.log
+# The price snapshot each build downloads; the committed fallback is data/ahprices.csv.gz
+data/ahprices.csv

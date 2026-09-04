@@ -6,14 +6,22 @@
  *
  * Output (compact, deterministic — sorted by id so rebuilds diff cleanly):
  *   { updated, items: { "<id>": [name, price|null] }, recipes: [{id,name,out,labor,fee,mats}] }
+ *
+ * Where the dumps come from: `../AACraft/` on this workstation, or `$AACRAFT_DATA_DIR` — which is
+ * how CI points it at the repo's own `data/`, since the workstation folder is not on the runner.
+ * Either directory may hold a dump gzipped (`crafts_all.json.gz`); the committed copies are, to
+ * keep 13 MB of JSON out of the repo as 600 KB.
  */
-import { readFileSync, writeFileSync, mkdirSync, statSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync, mkdirSync, statSync } from 'node:fs';
+import { gunzipSync } from 'node:zlib';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(HERE, '..');
-const SRC = resolve(ROOT, '..', 'AACraft');
+const SRC = process.env['AACRAFT_DATA_DIR']
+  ? resolve(ROOT, process.env['AACRAFT_DATA_DIR'])
+  : resolve(ROOT, '..', 'AACraft');
 const OUT_DIR = resolve(ROOT, 'public');
 const OUT_FILE = resolve(OUT_DIR, 'data.json');
 
@@ -102,7 +110,20 @@ function parsePrice(raw) {
 
 // ------------------------------------------------------------------- sources
 
-const readJson = (name) => JSON.parse(readFileSync(resolve(SRC, name), 'utf8'));
+/**
+ * One source file as text, plain or gzipped. The plain file wins when both exist, so a fresh
+ * download (CI writes `ahprices.csv` next to the committed `ahprices.csv.gz` fallback) is used
+ * over the stale snapshot without any bookkeeping.
+ */
+function readSource(name) {
+  const plain = resolve(SRC, name);
+  if (existsSync(plain)) return readFileSync(plain, 'utf8');
+  const gz = `${plain}.gz`;
+  if (existsSync(gz)) return gunzipSync(readFileSync(gz)).toString('utf8');
+  throw new Error(`missing source: ${plain} (and no .gz beside it) — set AACRAFT_DATA_DIR?`);
+}
+
+const readJson = (name) => JSON.parse(readSource(name));
 
 /** @type {Array<{id:number,name:string,labor:number,products:Array<any>,materials:Array<any>,primary_product_id?:number}>} */
 const craftsAll = readJson('crafts_all.json');
@@ -118,7 +139,7 @@ for (const r of craftsIndex) {
   }
 }
 
-const csvRows = parseCsv(readFileSync(resolve(SRC, 'ahprices.csv'), 'utf8'));
+const csvRows = parseCsv(readSource('ahprices.csv'));
 const header = csvRows[0] ?? [];
 
 // `updated` stamp: the header row carries `... ,Last Updated At:,<date>`

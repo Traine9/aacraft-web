@@ -1,0 +1,114 @@
+name: Deploy to GitHub Pages
+
+# Publishes dist/ to Pages, and does it twice a day so the auction-house prices on the page stay
+# current: the AH snapshot is fetched at build time, not committed.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+  schedule:
+    # GitHub cron is UTC ONLY, and Kyiv is UTC+3 in summer but UTC+2 in winter. Both offsets are
+    # listed here — 09/16 for EEST, 10/17 for EET — and the `when` job below drops the two runs
+    # that are not 12:00 / 19:00 in Kyiv. That keeps exactly two builds a day across the DST change
+    # instead of the whole schedule sliding by an hour twice a year.
+    - cron: '0 9,10,16,17 * * *'
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# One deploy at a time; never cancel one mid-flight — a half-published site is worse than a late one.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+env:
+  # Public community sheet, no auth. Same URL the workstation refresh uses (see data/README.md).
+  SHEET_URL: https://docs.google.com/spreadsheets/d/1VezKZkoRFzTnB0hLpTroTRFG40NH5vEpfMjWtWCCXIc/export?format=csv
+
+jobs:
+  # Is this the right hour in Kyiv? Only a `schedule` run can be at the wrong one.
+  when:
+    runs-on: ubuntu-latest
+    outputs:
+      go: ${{ steps.check.outputs.go }}
+    steps:
+      - id: check
+        env:
+          EVENT: ${{ github.event_name }}
+        run: |
+          set -uo pipefail
+          hour=$(TZ=Europe/Kyiv date +%H)
+          if [ "$EVENT" != "schedule" ]; then
+            echo "go=true" >> "$GITHUB_OUTPUT"
+            echo "manual or push run — building."
+          elif [ "$hour" = "12" ] || [ "$hour" = "19" ]; then
+            echo "go=true" >> "$GITHUB_OUTPUT"
+            echo "${hour}:00 in Kyiv — building."
+          else
+            echo "go=false" >> "$GITHUB_OUTPUT"
+            echo "${hour}:00 in Kyiv is the daylight-saving twin of a real slot — skipping."
+          fi
+
+  build:
+    needs: when
+    if: needs.when.outputs.go == 'true'
+    runs-on: ubuntu-latest
+    env:
+      # data/ instead of the workstation's ../AACraft/, which does not exist on a runner. Set for
+      # the whole job, not just `npm run data`: the e2e suite's webServer runs that script again as
+      # a child process, and it has to find the same dumps.
+      AACRAFT_DATA_DIR: data
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Fetch today's auction-house prices
+        run: |
+          set -uo pipefail
+          tmp=$(mktemp)
+          # A truncated file or a Google error page would build a price-less calculator, which looks
+          # like working software — so the response has to look like the sheet before it is used.
+          if curl -sSL --fail --retry 3 --retry-delay 5 --max-time 120 "$SHEET_URL" -o "$tmp" \
+            && head -1 "$tmp" | grep -q '^Item ID,Item Name' \
+            && [ "$(wc -l < "$tmp")" -gt 10000 ]; then
+            mv "$tmp" data/ahprices.csv
+            echo "fresh snapshot: $(wc -l < data/ahprices.csv) rows"
+          else
+            rm -f "$tmp"
+            echo "::warning::price sheet unreachable or malformed — building from the committed snapshot in data/"
+          fi
+
+      - run: npm run data
+
+      - run: npm run typecheck
+      - run: npm test
+
+      - run: npm run build
+
+      # The suite recomputes every expected number from the data.json just built, so it is a real
+      # check on today's prices — a snapshot that breaks the page must not reach Pages.
+      - run: npx playwright install --with-deps chromium
+      - run: npm run e2e
+
+      - uses: actions/configure-pages@v6
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v5
