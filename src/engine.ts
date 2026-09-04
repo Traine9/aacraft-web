@@ -43,8 +43,8 @@ export interface CalcOptions {
   /** Gold value of one labor point. Higher => crafting looks more expensive => more buying. */
   goldPerLabor: number;
   /**
-   * Proficiency discount, as the PERCENT of labor it saves: `0` none, `30` the old "max
-   * proficiency". Clamped to 0…100, defaults to `DEFAULT_PROF_PERCENT`.
+   * Proficiency discount, as the PERCENT of labor it saves: `0` none, `40` the most the UI
+   * offers. See `clampProfPercent` for how it is sanitized; defaults to `DEFAULT_PROF_PERCENT`.
    */
   profPercent?: number;
   /** Per-item unit price replacing the AH price everywhere. */
@@ -117,6 +117,17 @@ export interface TreeNode {
   /** Units needed on this branch. */
   qty: number;
   unitPrice: number | null;
+  /**
+   * Gold this branch costs: `qty * unitPrice` when bought, else the WHOLE crafts it takes —
+   * `crafts * fee` plus the same figure for every material under it. Labor is excluded at every
+   * level, so this is money, not the `craftUnitCost` that decides craft vs buy.
+   *
+   * Whole crafts, not `qty * unit cost`, because that is what you pay: one craft of a x100 recipe
+   * for 30 units is billed for 100. So the root node's figure is `Totals.grandTotal` — exactly, as
+   * long as no CRAFTED item appears in two branches, since `steps` aggregates such an item's
+   * demand globally and rounds up once, where this rounds up in each branch.
+   */
+  branchGold: number;
   /** Recursive per-unit craft cost, when the item is craftable. */
   craftUnitCost: number | null;
   noPrice: boolean;
@@ -212,10 +223,13 @@ export function itemPrice(index: CraftIndex, itemId: number): number | null {
   return index.entryById.get(itemId)?.[1] ?? null;
 }
 
-/** The proficiency discount assumed when none is given — what the old "max proficiency" meant. */
+/** The proficiency discount assumed when none is given; also what the UI preselects. */
 export const DEFAULT_PROF_PERCENT = 30;
 
-/** A usable proficiency discount: finite, 0…100. Anything else falls back to the default. */
+/**
+ * A usable proficiency discount. A finite percent is CLAMPED into 0…100 (`-10` → `0`, `500` →
+ * `100`); only a missing or non-finite one falls back to `DEFAULT_PROF_PERCENT`.
+ */
 export function clampProfPercent(percent: number | undefined): number {
   if (percent === undefined || !Number.isFinite(percent)) return DEFAULT_PROF_PERCENT;
   return Math.min(100, Math.max(0, percent));
@@ -230,6 +244,8 @@ export function clampProfPercent(percent: number | undefined): number {
  * point cannot turn 455 into 455.00000000000006 and then ceil it to 456.
  */
 export function effectiveLabor(labor: number, percent: number): number {
+  // No discount must return `labor` untouched, not `ceil(labor)`: the shortcut keeps a
+  // hypothetical fractional labor value in the data from being silently rounded up at 0 %.
   if (percent === 0) return labor;
   return Math.ceil((labor * (100 - percent)) / 100);
 }
@@ -257,7 +273,8 @@ function craftsFor(r: Recipe, units: number): number {
 
 interface Resolved {
   mode: Mode;
-  /** Gold cost of obtaining one unit under the chosen mode. */
+  /** Gold cost of obtaining one unit under the chosen mode, INCLUDING labor priced at
+   *  `goldPerLabor`. This is what decides craft vs buy — never what is shown as money. */
   unitCost: number;
   /** Effective price (override first, then AH), or null when unknown. */
   unitPrice: number | null;
@@ -304,7 +321,7 @@ class Calculator {
       // Only honour an override that actually produces the item; otherwise fall through.
       if (r && r.out[0] === itemId) return r;
     }
-    return this.index.recipesByProduct.get(itemId)?.[0] ?? null;
+    return defaultRecipe(this.index, itemId);
   }
 
   labor(recipe: Recipe): number {
@@ -350,11 +367,13 @@ class Calculator {
 
     this.resolving.add(itemId);
     let matCost = 0;
-    for (const [matId, amount] of recipe.mats) matCost += this.resolve(matId).unitCost * amount;
+    for (const [matId, amount] of recipe.mats) {
+      matCost += this.resolve(matId).unitCost * amount;
+    }
     this.resolving.delete(itemId);
 
-    const craftUnitCost =
-      (matCost + recipe.fee + this.labor(recipe) * this.goldPerLabor) / outAmount(recipe);
+    const out = outAmount(recipe);
+    const craftUnitCost = (matCost + recipe.fee + this.labor(recipe) * this.goldPerLabor) / out;
 
     // Craft only when strictly cheaper than buying. No price at all => nothing to buy => craft.
     const craft = forced === 'craft' || price === null || craftUnitCost < price;
@@ -591,6 +610,8 @@ function buildTree(
       mode: 'buy',
       qty: units,
       unitPrice: res.unitPrice,
+      // The bought figure; the craft branch below overwrites it once its materials are priced.
+      branchGold: (res.unitPrice ?? 0) * units,
       craftUnitCost: res.craftUnitCost,
       noPrice: res.unitPrice === null,
       priceOverridden: res.priceOverridden,
@@ -629,12 +650,18 @@ function buildTree(
 
     onPath.add(itemId);
     const children: TreeNode[] = [];
+    // Every material amount is already multiplied by the whole craft count, so summing the
+    // children's own branch gold and adding this recipe's fees prices the branch as it is bought.
+    let branchGold = crafts * recipe.fee;
     for (const [matId, amount] of recipe.mats) {
       budget--;
-      children.push(make(matId, crafts * amount, false, onPath));
+      const child = make(matId, crafts * amount, false, onPath);
+      branchGold += child.branchGold;
+      children.push(child);
     }
     onPath.delete(itemId);
     node.children = children;
+    node.branchGold = branchGold;
     return node;
   };
 

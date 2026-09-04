@@ -77,10 +77,23 @@ export function priceInputValue(n: number): string {
 }
 
 /**
- * How a batch size is spelled: `10 -> "10x"`. One definition, because it is appended to the item
- * name in three places — the target heading, the tree node's tag, and the recipe options — and
- * those must not drift apart.
+ * How a batch size is spelled: `10 -> "10x"`. One definition, because four places show it and they
+ * must not drift: the target heading (`main.ts`), the tree node tag and the recipe `<option>`
+ * labels (`ui/tree.ts`), and the search popup row (`ui/search.ts`).
  */
 export function batchLabel(out: number): string {
   return `${int(out)}x`;
+}
+
+/**
+ * The one batch-tag span, used wherever an item name is shown next to the size of the batch its
+ * recipe makes. One class and one testid, like `badge`, so a caller cannot invent a second
+ * spelling; `suffix` is for the target heading, which needs "per craft" to stay unambiguous.
+ */
+export function batchTag(out: number, suffix = ''): HTMLElement {
+  return el('span', {
+    className: 'batch-tag',
+    testid: 'batch-tag',
+    text: batchLabel(out) + suffix,
+  });
 }

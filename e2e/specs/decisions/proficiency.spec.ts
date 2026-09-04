@@ -24,8 +24,9 @@ test.describe('proficiency', () => {
 
   test('every step reprices the labor bill exactly as the engine says', async ({ calc }) => {
     await calc.openWithPreset(preset.itemId);
-    // Two steps either side of the default, so the assertion covers more and less proficiency.
-    for (const percent of [0, 15, 40]) {
+    // Every step the markup offers, not a sample of them — the name promises all nine, and a
+    // defect at 5/10/20/25/35 would otherwise pass.
+    for (const percent of UI_PROF_STEPS) {
       await calc.setProficiency(percent);
       const want = expected({ ...base, profPercent: percent });
       expect(await calc.totals(), `labor bill at ${percent}%`).toMatchObject({

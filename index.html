@@ -51,17 +51,8 @@
 
           <div class="field field-prof">
             <label for="prof">Proficiency (−% labor)</label>
-            <select id="prof" data-testid="prof-select">
-              <option value="0">0%</option>
-              <option value="5">5%</option>
-              <option value="10">10%</option>
-              <option value="15">15%</option>
-              <option value="20">20%</option>
-              <option value="25">25%</option>
-              <option value="30" selected>30%</option>
-              <option value="35">35%</option>
-              <option value="40">40%</option>
-            </select>
+            <!-- Options are rendered from PROF_STEPS in src/presets.ts, so the list has one home. -->
+            <select id="prof" data-testid="prof-select"></select>
           </div>
         </div>
 

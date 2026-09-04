@@ -5,7 +5,7 @@
  * their clicks with one delegated listener on the container.
  */
 import type { TreeNode } from '../engine';
-import { badge, batchLabel, clear, el, gold, int, price, setFlags } from './dom';
+import { badge, batchLabel, batchTag, clear, el, gold, int, price, setFlags } from './dom';
 
 /** Test id of the expand/collapse twisty — the anchor for the delegated click handler. */
 export const TREE_TOGGLE = 'tree-toggle';
@@ -14,6 +14,17 @@ export const MODE_BTN = 'mode-btn';
 /** Test id of the recipe `<select>` on multi-recipe craft nodes; carries `data-item-id`,
  *  option values are recipe ids. `main.ts` handles its `change` with a delegated listener. */
 export const RECIPE_SELECT = 'recipe-select';
+
+/**
+ * A recipe name with its batch size appended — unless the name already carries it. Many recipe
+ * names in the dump end in their own batch suffix ("Mass Production: Hereafter x1000"), and
+ * appending blindly produced "…x1000 1,000x". Matches the suffix in the raw form the data uses
+ * (`x1000`, not the grouped `1,000x` this UI renders), which is why it cannot use `batchLabel`.
+ */
+function optionLabel(name: string, out: number): string {
+  if (out <= 1) return name;
+  return new RegExp(`\\bx\\s*${out}\\b`, 'i').test(name) ? name : `${name} ${batchLabel(out)}`;
+}
 
 /** @param expanded item ids of the open craft nodes — view state that survives a recalc. */
 export function renderTree(container: HTMLElement, root: TreeNode, expanded: ReadonlySet<number>): void {
@@ -52,10 +63,9 @@ function nodeEl(node: TreeNode, expandedIds: ReadonlySet<number>, depth: number)
     const out = node.outAmount ?? 1;
     const produced = crafts * out;
     // Batch recipes are part of the item's identity here — "Fine Lumber 10x" reads as one label.
-    // Kept out of `.node-name` so the name span stays the bare item name.
-    if (out > 1) {
-      row.appendChild(el('span', { className: 'batch-tag', testid: 'batch-tag', text: batchLabel(out) }));
-    }
+    // Kept out of `.node-name` so the name span stays the bare item name. No "per craft" suffix
+    // is needed (unlike the target heading): a node has no quantity multiplier in front of it.
+    if (out > 1) row.appendChild(batchTag(out));
     row.appendChild(
       el('span', {
         className: 'node-detail',
@@ -77,6 +87,18 @@ function nodeEl(node: TreeNode, expandedIds: ReadonlySet<number>, depth: number)
     }
     // Whole crafts only, so a batch recipe overshoots — and the overshoot is paid for in full.
     if (produced > node.qty) row.appendChild(badge('surplus', `+${int(produced - node.qty)} spare`));
+    // What this branch costs. A buy node states its gold on the detail line above; a craft node's
+    // gold is the sum of its ingredients (and their fees) all the way down, which is otherwise
+    // invisible until you expand it. Labor is NOT in here, so the target's figure is the grand
+    // total the buy list foots — surplus from whole crafts included.
+    row.appendChild(
+      el('span', {
+        className: 'node-gold',
+        testid: 'node-gold',
+        attrs: { title: 'Materials and crafting fees for this branch — labor not included' },
+        text: gold(node.branchGold),
+      }),
+    );
   } else {
     const unit = node.unitPrice ?? 0;
     row.appendChild(
@@ -98,7 +120,7 @@ function nodeEl(node: TreeNode, expandedIds: ReadonlySet<number>, depth: number)
         attrs: { 'data-item-id': String(node.itemId), title: 'Recipe — this item can be crafted several ways' },
         children: node.recipeOptions.map((opt) =>
           el('option', {
-            text: `${opt.name}${opt.out > 1 ? ` ${batchLabel(opt.out)}` : ''} (${int(opt.labor)} labor)`,
+            text: `${optionLabel(opt.name, opt.out)} (${int(opt.labor)} labor)`,
             attrs: { value: String(opt.id), ...(opt.selected ? { selected: '' } : {}) },
           }),
         ),

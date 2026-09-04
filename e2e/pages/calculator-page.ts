@@ -154,7 +154,12 @@ export class CalculatorPage {
 
   /** The "10x" tag on a popup row whose item is made in batches. */
   popupBatchTag(itemId: number): Locator {
-    return this.searchOption(itemId).locator('[data-testid="popup-batch"]');
+    return this.searchOption(itemId).locator(sel('batch-tag'));
+  }
+
+  /** The "10x per craft" tag in the target heading — present only for a batch-crafted target. */
+  get headingBatchTag(): Locator {
+    return this.targetLine.locator(sel('batch-tag'));
   }
 
   /** Item id of the highlighted popup row. */
@@ -170,6 +175,10 @@ export class CalculatorPage {
 
   async setGoldPerLabor(value: number): Promise<void> {
     await this.goldPerLaborInput.fill(String(value));
+  }
+
+  async setQty(value: number): Promise<void> {
+    await this.qtyInput.fill(String(value));
   }
 
   /** Pick a proficiency discount from the preset list (0, 5, … 40). */
@@ -240,6 +249,16 @@ export class CalculatorPage {
   /** The batch-yield line of a craft node — only rendered when one craft makes several units. */
   nodeYield(itemId: number): Locator {
     return this.rowPart(itemId, 'node-yield');
+  }
+
+  /** What a craft node's branch costs in gold — materials and fees all the way down, no labor. */
+  nodeGold(itemId: number): Locator {
+    return this.rowPart(itemId, 'node-gold');
+  }
+
+  /** The same span on BOUGHT nodes, where it must never appear: their detail line states the gold. */
+  get buyNodeGolds(): Locator {
+    return this.id('tree-node', '.node-buy').locator(`> .node-row ${sel('node-gold')}`);
   }
 
   /** "+K spare" — the overshoot of a batch recipe, since whole crafts cannot be split. */

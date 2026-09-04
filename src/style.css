@@ -122,16 +122,12 @@ h1 .sub {
   min-width: 240px;
 }
 
-.field-qty input {
-  width: 96px;
-}
-
-.field-gpl input {
-  width: 120px;
-}
-
-/* The one field skin. The proficiency `<select>` joins it so it cannot drift from its neighbours;
- * the width below comes after, because it shares this rule's specificity and must win. */
+/* The one field skin, shared by the text inputs and the proficiency `<select>` so they cannot
+ * drift apart. Every field is full-width; the top bar's flex sizing decides the rest.
+ *
+ * (`.field-qty input` and `.field-gpl input` used to declare 96px/120px here. Both sat at this
+ * rule's own specificity, ABOVE it, so `width: 100%` always won and neither did anything — they
+ * were removed rather than moved, so nothing resizes.) */
 input[type='text'],
 input[type='number'],
 input[type='search'],
@@ -145,7 +141,9 @@ input[type='search'],
   width: 100%;
 }
 
-.field-prof select {
+/* Two classes deep, so this beats the skin above on specificity rather than on source order —
+ * reordering the block (a formatter, an alphabetizer) must not silently resize the control. */
+.field.field-prof select {
   width: 96px;
 }
 
@@ -368,7 +366,9 @@ button {
   white-space: nowrap;
 }
 
-/* Batch size, read as part of the item's name: "Fine Lumber 10x". */
+/* Batch size, read as part of the item's name: "Fine Lumber 10x". The negative margin halves
+ * `.node-row`'s `gap: 4px 8px` so the tag sits tight against the name it qualifies instead of
+ * floating between it and the next detail span. */
 .batch-tag {
   color: var(--accent);
   font-size: 11.5px;
@@ -376,6 +376,22 @@ button {
   font-variant-numeric: tabular-nums;
   margin-left: -4px;
   flex: none;
+}
+
+/* The heading is not a flex row, so there is no gap to claw back — the space before the tag is a
+ * real one in the markup, which is what makes the heading read (and copy, and be announced) as a
+ * trailing clause: "… (#42045) 10x per craft". */
+.target-line .batch-tag {
+  margin-left: 0;
+  font-size: 12.5px;
+}
+
+/* What a craft branch costs in gold. Same weight as the buy nodes' `= 208.50g`, so a column of
+ * mixed craft/buy rows reads as one list of prices. */
+.node-gold {
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
 /* Batch yield — brighter than the labor detail, because it explains the material amounts. */

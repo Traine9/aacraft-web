@@ -93,13 +93,18 @@ test.describe('item search popup', () => {
     calc,
   }) => {
     const target = batchTarget();
+    // A PREFIX, not the whole name: typing the full name would make the closing assertion true no
+    // matter what `pick()` does to the input, since the text would already be there.
+    const prefix = target.name.slice(0, Math.max(3, Math.ceil(target.name.length / 2)));
+    expect(prefix, 'the query must be shorter than the name it picks').not.toBe(target.name);
 
-    await calc.searchFor(target.name);
+    await calc.searchFor(prefix);
     await expect(calc.popupBatchTag(target.itemId)).toHaveText(
       `${target.outAmount.toLocaleString('en-US')}x`,
     );
 
-    // The tag is decoration, not part of the name: the input must stay searchable after a pick.
+    // The tag is decoration, not part of the name: picking fills the BARE name, so the input is
+    // still a query that finds the item again.
     await calc.searchOption(target.itemId).click();
     await expect(calc.searchInput).toHaveValue(target.name);
   });

@@ -36,7 +36,11 @@ e2e/
     ├── presets/presets.spec.ts         # preset → target, buy list and totals == engine
     ├── buy-list/price-edit.spec.ts     # live re-price, caret survival, override flag, reset
     ├── buy-list/filter.spec.ts         # hide/show rows, totals unchanged, empty row
-    └── decisions/craft-vs-buy.spec.ts  # gold-per-labor flip, proficiency, per-node force buy
+    ├── decisions/craft-vs-buy.spec.ts  # gold-per-labor flip, per-node force buy
+    ├── decisions/proficiency.spec.ts   # every step reprices labor, default restores the bill
+    ├── decisions/recipe-select.spec.ts # options offered, biggest batch default, switch recalcs
+    ├── decisions/batch-yield.spec.ts   # batch tag, yield line, surplus badge, target heading
+    └── decisions/node-gold.spec.ts     # branch gold per craft node, == grand total, labor-free
 ```
 
 Reports (gitignored): `reports/html`, traces + failure screenshots in `reports/test-results`.

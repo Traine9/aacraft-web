@@ -12,6 +12,7 @@ import {
   buildIndex,
   byNameThenId,
   calculate,
+  DEFAULT_PROF_PERCENT,
   itemName,
   type BuyRow,
   type CalcResult,
@@ -20,7 +21,7 @@ import {
   type Mode,
   type TreeNode,
 } from './engine';
-import { PRESETS } from './presets';
+import { PRESETS, PROF_STEPS } from './presets';
 import {
   applyFilter,
   isEditingPrice,
@@ -29,7 +30,7 @@ import {
   renderBuyList,
   PRICE_RESET,
 } from './ui/buylist';
-import { batchLabel, clear, el, gold, int, must } from './ui/dom';
+import { batchTag, clear, el, gold, int, must } from './ui/dom';
 import { buildSearchItems, initSearch, type SearchItem } from './ui/search';
 import { MODE_BTN, RECIPE_SELECT, renderTree, TREE_TOGGLE } from './ui/tree';
 
@@ -87,7 +88,11 @@ const els = {
   totalGrand: must<HTMLElement>('#total-grand'),
 };
 
-/** The engine inputs, read straight from the fields; the engine sanitizes what it is given. */
+/**
+ * Engine inputs read off the fields. `qty` and `goldPerLabor` get their fallbacks HERE, and they
+ * differ from the engine's: it would take qty 0 (an empty breakdown) and would let a negative
+ * gold-per-labor through. `profPercent` is the one passed raw — `clampProfPercent` owns it.
+ */
 function controls(): { qty: number; goldPerLabor: number; profPercent: number; filter: string } {
   const qty = Math.floor(Number(els.qty.value));
   const gpl = Number(els.goldPerLabor.value);
@@ -202,11 +207,19 @@ function repaint(opts: { patchBuy?: boolean } = {}): void {
   const c = controls();
 
   clearStatus();
-  // The heading carries the batch size too, exactly like a tree node: asking for 1 Alluvion Love
-  // when the only recipe makes 10 must not read as "1 × Alluvion Love" and nothing else.
-  const rootBatch = result.tree.mode === 'craft' ? (result.tree.outAmount ?? 1) : 1;
-  const targetName = itemName(index, state.target) + (rootBatch > 1 ? ` ${batchLabel(rootBatch)}` : '');
-  els.targetLine.textContent = `${int(c.qty)} × ${targetName} (#${state.target})`;
+  // The heading states the batch size, because asking for 1 Alluvion Love when the only recipe
+  // makes 10 must not read as "1 × Alluvion Love" and nothing else.
+  //
+  // It goes AFTER the id and says "per craft", deliberately NOT glued to the name the way a tree
+  // node tags it: the heading already opens with a quantity, so "5 × Hereafter Stone 1,000x" reads
+  // as five thousand units when it is really one craft of a thousand covering an order of five.
+  // A tree node has no such multiplier in front of it, so there the bare tag is unambiguous.
+  clear(els.targetLine);
+  const rootBatch = result.tree.outAmount ?? 1; // only craft nodes carry it; a bought target has none
+  els.targetLine.append(`${int(c.qty)} × ${itemName(index, state.target)} (#${state.target})`);
+  // The space is a real one in the markup, not a CSS margin: the heading is a sentence, so it has
+  // to copy and be announced as "… (#42045) 10x per craft", not with the id run into the tag.
+  if (rootBatch > 1) els.targetLine.append(' ', batchTag(rootBatch, ' per craft'));
 
   seedExpanded(result.tree);
   renderTree(els.tree, result.tree, view.expanded);
@@ -255,6 +268,22 @@ function itemIdFrom(target: EventTarget | null, selector: string): number | null
   const hit = target.closest<HTMLElement>(selector);
   const raw = hit?.dataset['itemId'];
   return raw === undefined ? null : Number(raw);
+}
+
+/** Fill the proficiency `<select>` from `PROF_STEPS`, with the engine's default preselected. */
+function renderProfOptions(): void {
+  clear(els.prof);
+  for (const percent of PROF_STEPS) {
+    els.prof.appendChild(
+      el('option', {
+        text: `${percent}%`,
+        attrs: {
+          value: String(percent),
+          ...(percent === DEFAULT_PROF_PERCENT ? { selected: '' } : {}),
+        },
+      }),
+    );
+  }
 }
 
 function renderPresets(idx: CraftIndex): void {
@@ -371,6 +400,7 @@ function wireControls(idx: CraftIndex, items: readonly SearchItem[]): void {
     recalc();
   });
 
+  renderProfOptions();
   renderPresets(idx);
 }
 

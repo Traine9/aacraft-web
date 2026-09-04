@@ -15,3 +15,11 @@ export const PRESETS: readonly Preset[] = [
   { label: '1× Erenor Flame Lunafrost', itemId: 43154, qty: 1 },
   { label: '100× Starshard Ingot', itemId: 3332, qty: 100 },
 ];
+
+/**
+ * Proficiency discounts the control offers, in percent of labor saved. THE source of the list:
+ * `main.ts` renders the `<select>` from it (the markup ships an empty one) and both test suites
+ * import it, so the offered options cannot drift from the tested ones. The engine accepts any
+ * 0…100 value — this is only what the UI puts within one click.
+ */
+export const PROF_STEPS: readonly number[] = [0, 5, 10, 15, 20, 25, 30, 35, 40];

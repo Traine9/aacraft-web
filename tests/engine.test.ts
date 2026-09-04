@@ -1,6 +1,7 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import { existsSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import { PROF_STEPS } from '../src/presets';
 import {
   buildIndex,
   calculate,
@@ -81,8 +82,8 @@ const run = (opts: Partial<CalcOptions> = {}): CalcResult =>
 /** The full craft chain for the baseline run: Cloth -> Magnificent -> Delphinad -> Ayanad. */
 const BASELINE_STEPS = [5, 4, 2, 1];
 
-/** The proficiency percentages the UI's preset list offers (`e2e/lib/oracle.ts` pins the markup). */
-const UI_STEPS = [0, 5, 10, 15, 20, 25, 30, 35, 40];
+/** Imported, not restated: the same array `main.ts` renders the `<select>` from. */
+const UI_STEPS = PROF_STEPS;
 
 const step = (res: CalcResult, itemId: number): Step | undefined =>
   res.steps.find((s) => s.itemId === itemId);
@@ -224,6 +225,53 @@ describe('craft-vs-buy decision', () => {
 
     const justAbove = run({ priceOverride: { 5: 0.1251 } });
     expect(justAbove.steps.some((s) => s.itemId === 5)).toBe(true);
+  });
+});
+
+describe('branchGold', () => {
+  it('is qty × price on a bought node', () => {
+    const wisp = run().tree.children?.[1];
+    expect(wisp?.mode).toBe('buy');
+    expect(wisp?.qty).toBe(2);
+    expect(wisp?.branchGold).toBe(20);
+  });
+
+  it('is this recipe\'s fees plus every material branch under it', () => {
+    const root = run().tree;
+    expect(root.mode).toBe('craft');
+    // 1.5 Ayanad fee + Delphinad's branch (31.6) + 2 Wisp at 10.
+    expect(root.branchGold).toBeCloseTo(53.1, 10);
+    const fromChildren = (root.children ?? []).reduce((sum, c) => sum + c.branchGold, 0);
+    expect(root.branchGold).toBeCloseTo(fromChildren + 1.5 * (root.crafts ?? 0), 10);
+  });
+
+  it('pays for WHOLE crafts, so the target matches the bill it foots', () => {
+    // Magnificent Robe: nothing under it is crafted in two places, so the branch and the globally
+    // aggregated buy list price the same purchases — the display and the total agree exactly.
+    const res = run({ target: 4 });
+    expect(res.tree.branchGold).toBeCloseTo(res.totals.grandTotal, 10);
+    expect(res.tree.branchGold).toBeCloseTo(10.6, 10);
+  });
+
+  it('rounds up per branch, so a shared sub-craft counts twice where `steps` counts once', () => {
+    // The documented caveat, and why the fixture shares Cloth: two branches need one Cloth each,
+    // so the tree pays for two crafts of `Cloth x4` where the aggregated plan buys just one.
+    const res = run();
+    const clothCraft = 5 * 0.1; // one craft of Cloth x4 = 5 Fiber at 0.1g
+    expect(res.tree.branchGold).toBeCloseTo(res.totals.grandTotal + clothCraft, 10);
+  });
+
+  it('leaves labor out, so a dearer labor price does not move it', () => {
+    // Everything pinned to craft, so the tree keeps the same shape and only the labor PRICE
+    // differs — otherwise dear labor flips Cloth to buy and changes the materials legitimately.
+    const allCraft = { 1: 'craft', 2: 'craft', 4: 'craft', 5: 'craft' } as const;
+    const cheap = run({ goldPerLabor: 0, modeOverride: allCraft });
+    const dear = run({ goldPerLabor: 3, modeOverride: allCraft });
+
+    expect(dear.tree.mode).toBe('craft');
+    expect(dear.tree.branchGold).toBe(cheap.tree.branchGold);
+    // ...while the labor-inclusive figure that drives the craft-vs-buy call certainly does move.
+    expect(dear.tree.craftUnitCost!).toBeGreaterThan(cheap.tree.craftUnitCost!);
   });
 });
 

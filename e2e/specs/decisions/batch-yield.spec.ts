@@ -51,17 +51,31 @@ test.describe('batch recipe yield', () => {
 
 test.describe('a batch-crafted target', () => {
   const target = batchTarget();
+  const batch = target.outAmount.toLocaleString('en-US');
 
   test('carries its batch size in the heading, not just in the tree', async ({ calc }) => {
     await calc.openByName(target.name, target.itemId);
 
-    // "1 × Alluvion Love 10x (#42045)" — asking for one when the recipe makes ten must say so up
-    // top, where the preset heading is the only thing naming the item.
+    // Asking for one when the recipe makes ten must say so up top, where the heading is the only
+    // thing naming the item.
     await expect(calc.targetLine).toHaveText(
-      `1 × ${target.name} ${target.outAmount.toLocaleString('en-US')}x (#${target.itemId})`,
+      `1 × ${target.name} (#${target.itemId}) ${batch}x per craft`,
     );
-    await expect(calc.batchTag(target.itemId)).toHaveText(
-      `${target.outAmount.toLocaleString('en-US')}x`,
+    await expect(calc.batchTag(target.itemId)).toHaveText(`${batch}x`);
+  });
+
+  test('states the batch as a per-craft rate, so a quantity cannot read as a multiple of it', async ({
+    calc,
+  }) => {
+    await calc.openByName(target.name, target.itemId);
+    await calc.setQty(3);
+
+    // The bug this guards: appending the batch to the NAME made "3 × <name> 10x" read as thirty
+    // units, when three units still cost exactly one craft. The batch belongs after the id, as a
+    // rate — and the quantity in front keeps meaning units ordered.
+    await expect(calc.headingBatchTag).toHaveText(`${batch}x per craft`);
+    await expect(calc.targetLine).toHaveText(
+      `3 × ${target.name} (#${target.itemId}) ${batch}x per craft`,
     );
   });
 });

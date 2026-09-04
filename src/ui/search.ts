@@ -1,6 +1,6 @@
 /** Item search: substring match over craftable items with a keyboard-navigable popup. */
 import { byNameThenId, defaultRecipe, itemName, outAmount, type CraftIndex } from '../engine';
-import { batchLabel, clear, el } from './dom';
+import { batchTag, clear, el } from './dom';
 
 export interface SearchItem {
   id: number;
@@ -118,9 +118,7 @@ export function initSearch(opts: SearchOptions): void {
           el('span', { className: 'popup-name', text: item.name }),
           // Same tag as the tree node and the heading: a batch item is worth knowing about before
           // you pick it, since asking for 1 buys reagents for the whole batch.
-          ...(item.out > 1
-            ? [el('span', { className: 'batch-tag', testid: 'popup-batch', text: batchLabel(item.out) })]
-            : []),
+          ...(item.out > 1 ? [batchTag(item.out)] : []),
           el('span', { className: 'popup-id', text: `· ${item.id}` }),
         ],
       });

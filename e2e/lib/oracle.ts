@@ -19,7 +19,9 @@ import {
   byNameThenId,
   calculate,
   DEFAULT_PROF_PERCENT,
+  defaultRecipe,
   itemName,
+  outAmount,
   type CalcOptions,
   type CalcResult,
   type CraftIndex,
@@ -27,7 +29,7 @@ import {
   type Mode,
   type TreeNode,
 } from '../../src/engine';
-import { PRESETS, type Preset } from '../../src/presets';
+import { PRESETS, PROF_STEPS, type Preset } from '../../src/presets';
 import { MAX_ROWS } from '../../src/ui/search';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
@@ -71,8 +73,12 @@ export const UI_GOLD_PER_LABOR = 0.3;
 /** The proficiency option preselected in `index.html` — the engine's own default, restated here. */
 export const UI_PROF_PERCENT = DEFAULT_PROF_PERCENT;
 
-/** The proficiency percentages `index.html` offers; `prof.spec` pins the markup to this list. */
-export const UI_PROF_STEPS = [0, 5, 10, 15, 20, 25, 30, 35, 40];
+/**
+ * The proficiency percentages the control offers. Imported from the app rather than restated:
+ * `main.ts` renders the `<select>` from this same array, so `proficiency.spec` asserting against
+ * it proves the rendering works, not that two hand-kept copies happen to match.
+ */
+export const UI_PROF_STEPS: readonly number[] = PROF_STEPS;
 
 /** `CalcOptions` with the controls the markup gives defaults made optional. */
 export type EngineInputs = Omit<CalcOptions, 'goldPerLabor'> & { goldPerLabor?: number };
@@ -199,16 +205,59 @@ export function firstBatchCraft(base: EngineInputs): BatchCraft {
 export function batchTarget(): Subject & { outAmount: number } {
   const index = craftIndex();
   for (const itemId of [...index.recipesByProduct.keys()].sort((a, b) => a - b)) {
-    const tree = expected({ target: itemId, qty: 1 }).tree;
-    if (tree.mode !== 'craft' || (tree.outAmount ?? 1) <= 1) continue;
+    // The item's own default recipe, straight from the index — no `calculate()` needed. A target
+    // is always crafted (that is what making it the target means), so its root node's `outAmount`
+    // is this recipe's, and asking the engine for it would be 39 full runs to read one field.
+    const recipe = defaultRecipe(index, itemId);
+    if (!recipe) continue;
+    const out = outAmount(recipe);
+    if (out <= 1) continue;
     const name = itemName(index, itemId);
     // The spec reaches it through the search popup, which caps its rows: the item has to be
     // findable by its own full name for the click to land.
     if (searchHits(name).slice(0, SEARCH_MAX_ROWS).some((hit) => hit.id === itemId)) {
-      return { itemId, name, outAmount: tree.outAmount ?? 1 };
+      return { itemId, name, outAmount: out };
     }
   }
   throw new Error('no batch-crafted target in this data — the heading spec has no subject');
+}
+
+/** A craft node and the gold its branch costs — whole crafts of everything under it, no labor. */
+export interface NodeGold extends Subject {
+  gold: number;
+}
+
+/**
+ * Every craft node the tree renders, with the gold `.node-gold` must print on it. First occurrence
+ * per item only: like `firstBatchCraft`, because `CalculatorPage.treeNode` resolves to that one and
+ * the figure is per branch — the same item deeper in the tree is a different quantity.
+ */
+export function craftNodeGolds(base: EngineInputs): NodeGold[] {
+  const golds = new Map<number, NodeGold>();
+  walkTree(expected(base).tree, (node) => {
+    if (node.mode !== 'craft' || golds.has(node.itemId)) return;
+    golds.set(node.itemId, { itemId: node.itemId, name: node.name, gold: node.branchGold });
+  });
+  return [...golds.values()];
+}
+
+/**
+ * A craft node that survives a much dearer labor price unchanged — same recipe, same quantity — so
+ * the gold on it must not move either. That is the whole claim of the display: labor is priced in
+ * the craft-vs-buy decision but never billed, so it cannot be inside the number shown as money.
+ *
+ * Takes the DEAREST labor price that still leaves such a node, so the spec's evidence is as loud as
+ * the data allows.
+ */
+export function laborProofCraft(base: EngineInputs): { gpl: number; subject: NodeGold } | null {
+  const atDefault = new Map(craftNodeGolds(base).map((n) => [n.itemId, n]));
+  for (const gpl of [...HIGHER_GPL].reverse()) {
+    for (const dear of craftNodeGolds({ ...base, goldPerLabor: gpl })) {
+      const cheap = atDefault.get(dear.itemId);
+      if (cheap && cheap.gold === dear.gold) return { gpl, subject: dear };
+    }
+  }
+  return null;
 }
 
 /** A multi-recipe craft node plus a non-default recipe to switch it to. */
