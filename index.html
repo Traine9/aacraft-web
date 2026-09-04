@@ -51,40 +51,17 @@
 
           <div class="field field-prof">
             <label for="prof">Proficiency (−% labor)</label>
-            <div class="prof-control">
-              <select id="prof" data-testid="prof-select">
-                <option value="0">0%</option>
-                <option value="5">5%</option>
-                <option value="10">10%</option>
-                <option value="15">15%</option>
-                <option value="20">20%</option>
-                <option value="25">25%</option>
-                <option value="30" selected>30%</option>
-                <option value="35">35%</option>
-                <option value="40">40%</option>
-              </select>
-              <input
-                id="prof-exact"
-                type="number"
-                min="0"
-                max="100"
-                step="1"
-                value="30"
-                hidden
-                aria-label="Exact proficiency percent"
-                data-testid="prof-exact"
-              />
-              <button
-                id="prof-exact-toggle"
-                type="button"
-                class="ghost prof-exact-toggle"
-                aria-pressed="false"
-                title="Set an exact percentage"
-                data-testid="prof-exact-toggle"
-              >
-                +
-              </button>
-            </div>
+            <select id="prof" data-testid="prof-select">
+              <option value="0">0%</option>
+              <option value="5">5%</option>
+              <option value="10">10%</option>
+              <option value="15">15%</option>
+              <option value="20">20%</option>
+              <option value="25">25%</option>
+              <option value="30" selected>30%</option>
+              <option value="35">35%</option>
+              <option value="40">40%</option>
+            </select>
           </div>
         </div>
 

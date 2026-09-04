@@ -104,7 +104,8 @@ describe('effectiveLabor', () => {
   it('covers the whole 0…40 range the UI offers, in 5 % steps', () => {
     const at = (p: number) => effectiveLabor(100, p);
     expect(UI_STEPS.map(at)).toEqual([100, 95, 90, 85, 80, 75, 70, 65, 60]);
-    // Exact, non-step values work identically — that is what the "+" field is for.
+    // The UI only offers the steps above, but the engine takes any percent — keep it that way so
+    // a finer-grained control (per-profession, say) needs no engine change.
     expect(effectiveLabor(100, 27)).toBe(73);
     expect(effectiveLabor(650, 27)).toBe(475); // ceil(474.5)
   });
@@ -246,7 +247,7 @@ describe('profPercent', () => {
     expect(run({ profPercent: DEFAULT_PROF_PERCENT }).totals.labor).toBe(126);
   });
 
-  it('honours an exact, off-step percentage', () => {
+  it('honours an off-step percentage the UI does not offer', () => {
     // ceil(100*0.73) + ceil(50*0.73) + ceil(20*0.73) + ceil(10*0.73) = 73 + 37 + 15 + 8
     expect(run({ profPercent: 27 }).totals.labor).toBe(133);
   });

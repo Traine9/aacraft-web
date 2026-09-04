@@ -81,12 +81,16 @@ Outputs:
 Single page, desktop-first, works standalone from `dist/` so it can be dropped into the site.
 
 - Top bar: **item search** (input; popup dropdown listing matching craftable items — substring,
-  case-insensitive, keyboard ↑↓⏎, max ~50 rows, shows name + id), **quantity**,
-  **gold per labor** field with a short hint: "If the AH price is below the craft cost at this
-  labor value, the AH price is used", a **proficiency** control, and the data `updated` stamp.
-  The proficiency control is a `<select>` of 0 %, 5 % … 40 % (30 % preselected) plus a `+` button
-  that opens an exact-percent field on top of it; pressing `+` again drops back to the list, so
-  the override is reversible like every other one on the page.
+  case-insensitive, keyboard ↑↓⏎, max ~50 rows, shows name + id, and the batch size for items made
+  in batches), **quantity**, **gold per labor** field with a short hint: "If the AH price is below
+  the craft cost at this labor value, the AH price is used", a **proficiency** control, and the
+  data `updated` stamp. The proficiency control is a single `<select>` of 0 %, 5 % … 40 %
+  (30 % preselected) applying to every craft.
+  - It is deliberately ONE global value. A per-profession override (a row per profession, each with
+    its own reduction, everything else falling back to the global) was specified and dropped on
+    2026-09-04: `crafts_all.json` records no profession for a recipe, so nothing can match a recipe
+    to such a row. Revisit only if a profession-per-recipe source appears. The engine's
+    `profPercent` already accepts any 0…100 value, so it needs no change if it does.
 - Preset buttons (from `src/presets.ts`): at minimum `22× Typhoon Trade Pack Storage`
   (itemId **35792**, qty 22). Note 7429 is the *recipe* id for that pack — item 7429 is an
   unrelated item (Blazing Sun Gauntlets); presets take item ids. Clicking a preset fills

@@ -130,27 +130,12 @@ h1 .sub {
   width: 120px;
 }
 
-.prof-control {
-  display: flex;
-  align-items: stretch;
-  gap: 6px;
-}
-
-/* Square, same height as the field it sits beside. */
-.prof-exact-toggle {
-  width: 32px;
-  padding: 0;
-  font-size: 16px;
-  line-height: 1;
-  flex: none;
-}
-
 /* The one field skin. The proficiency `<select>` joins it so it cannot drift from its neighbours;
- * the widths below come after, because they share this rule's specificity and must win. */
+ * the width below comes after, because it shares this rule's specificity and must win. */
 input[type='text'],
 input[type='number'],
 input[type='search'],
-.prof-control select {
+.field-prof select {
   background: var(--bg-input);
   border: 1px solid var(--line);
   border-radius: var(--radius);
@@ -160,13 +145,8 @@ input[type='search'],
   width: 100%;
 }
 
-.prof-control select,
-.prof-control input[type='number'] {
+.field-prof select {
   width: 96px;
-}
-
-.prof-control select:disabled {
-  color: var(--text-dim);
 }
 
 input:focus-visible,
@@ -450,10 +430,7 @@ button {
   background: var(--bg-raised);
 }
 
-/* The one "this control is holding an override" look, shared by the craft/buy buttons and the
- * proficiency "+" toggle — without the background, pressed looked identical to plain hover. */
-.mode-btn[aria-pressed='true'],
-.prof-exact-toggle[aria-pressed='true'] {
+.mode-btn[aria-pressed='true'] {
   background: var(--accent-dim);
   color: var(--accent);
   border-color: var(--accent);

@@ -1,10 +1,12 @@
 /**
- * proficiency.spec.ts — the proficiency control: a preset list plus an exact-percent escape hatch.
+ * proficiency.spec.ts — the global proficiency control.
  *
  * Proficiency is a discount on the labor every craft burns, so it moves the labor total (and can
- * move a craft-vs-buy decision, which `craft-vs-buy.spec.ts` covers). Two things are asserted here
- * that the engine cannot: that the markup offers the agreed steps, and that the "+" field overrides
- * the list while it is open and gives the list back when it is closed.
+ * move a craft-vs-buy decision, which `craft-vs-buy.spec.ts` covers). One thing is asserted here
+ * that the engine cannot: that the markup offers the agreed steps, with the default preselected.
+ *
+ * It is deliberately ONE global value. A per-profession override was considered and dropped: the
+ * recipe dump carries no profession for a recipe, so nothing could match a recipe to such a row.
  */
 import { test, expect } from '@lib/fixtures';
 import { expected, mainPreset, mainPresetInputs, UI_PROF_PERCENT, UI_PROF_STEPS } from '@lib/oracle';
@@ -12,16 +14,12 @@ import { expected, mainPreset, mainPresetInputs, UI_PROF_PERCENT, UI_PROF_STEPS 
 const preset = mainPreset();
 const base = mainPresetInputs();
 
-/** A percentage the preset list deliberately does not offer — only the "+" field can reach it. */
-const OFF_STEP = 27;
-
 test.describe('proficiency', () => {
-  // Only the two repricing tests need a breakdown; the markup pin below asserts nothing about it.
   test('offers 0…40 in steps of 5, with the default preselected', async ({ calc }) => {
+    // Markup only — no breakdown needed, so this one skips the preset render.
     await calc.goto();
     expect(await calc.profOptionValues()).toEqual(UI_PROF_STEPS);
     await expect(calc.profSelect).toHaveValue(String(UI_PROF_PERCENT));
-    await expect(calc.profExact, 'the exact field starts closed').toBeHidden();
   });
 
   test('every step reprices the labor bill exactly as the engine says', async ({ calc }) => {
@@ -36,23 +34,14 @@ test.describe('proficiency', () => {
     }
   });
 
-  test('the "+" field sets an exact percentage and hands control back when closed', async ({
-    calc,
-  }) => {
+  test('picking the default back restores the original bill', async ({ calc }) => {
     await calc.openWithPreset(preset.itemId);
     const atDefault = await calc.totals();
 
-    await calc.setExactProficiency(OFF_STEP);
-    await expect(calc.profSelect, 'the list is inert while the exact field is open').toBeDisabled();
-    expect(UI_PROF_STEPS).not.toContain(OFF_STEP);
-    expect(await calc.totals()).toMatchObject({
-      labor: expected({ ...base, profPercent: OFF_STEP }).totals.labor,
-    });
+    await calc.setProficiency(0);
+    expect(await calc.totals()).not.toEqual(atDefault);
 
-    // Closing it drops back to whatever the list still holds — the override is reversible.
-    await calc.toggleExactProficiency();
-    await expect(calc.profExact).toBeHidden();
-    await expect(calc.profSelect).toBeEnabled();
+    await calc.setProficiency(UI_PROF_PERCENT);
     expect(await calc.totals()).toEqual(atDefault);
   });
 });

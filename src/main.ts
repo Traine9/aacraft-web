@@ -73,8 +73,6 @@ const els = {
   qty: must<HTMLInputElement>('#qty'),
   goldPerLabor: must<HTMLInputElement>('#gold-per-labor'),
   prof: must<HTMLSelectElement>('#prof'),
-  profExact: must<HTMLInputElement>('#prof-exact'),
-  profExactToggle: must<HTMLButtonElement>('#prof-exact-toggle'),
   presets: must<HTMLElement>('#presets'),
   targetLine: must<HTMLElement>('#target-line'),
   tree: must<HTMLElement>('#tree'),
@@ -89,13 +87,6 @@ const els = {
   totalGrand: must<HTMLElement>('#total-grand'),
 };
 
-/**
- * Whether the exact-percent field is open — the one bit `setProfExactOpen` renders from, kept here
- * rather than read back off `profExact.hidden` so the control has a source of truth that is not a
- * presentation attribute (and is a plain boolean, not the DOM's `boolean | "until-found"`).
- */
-let profExactOpen = false;
-
 /** The engine inputs, read straight from the fields; the engine sanitizes what it is given. */
 function controls(): { qty: number; goldPerLabor: number; profPercent: number; filter: string } {
   const qty = Math.floor(Number(els.qty.value));
@@ -103,29 +94,12 @@ function controls(): { qty: number; goldPerLabor: number; profPercent: number; f
   return {
     qty: Number.isFinite(qty) && qty >= 1 ? qty : 1,
     goldPerLabor: Number.isFinite(gpl) && gpl >= 0 ? gpl : 0,
-    // The exact field, while it is open, overrides the preset list behind it.
-    profPercent: Number(profExactOpen ? els.profExact.value : els.prof.value),
+    profPercent: Number(els.prof.value),
     filter: els.filter.value,
   };
 }
 
 // ------------------------------------------------------------------------------- render
-
-/**
- * The only writer of the proficiency control's appearance: opening it reveals the exact field over
- * the (now inert) preset list and seeds it from the list, closing it hands control back. Every
- * property below is derived from `open`, so the two states cannot drift apart.
- */
-function setProfExactOpen(open: boolean): void {
-  profExactOpen = open;
-  if (open) els.profExact.value = els.prof.value;
-  els.profExact.hidden = !open;
-  els.prof.disabled = open;
-  els.profExactToggle.textContent = open ? '−' : '+';
-  els.profExactToggle.setAttribute('aria-pressed', String(open));
-  els.profExactToggle.title = open ? 'Back to the preset list' : 'Set an exact percentage';
-  if (open) els.profExact.focus();
-}
 
 function setStatus(message: string, kind: 'info' | 'error' = 'info'): void {
   els.status.textContent = message;
@@ -315,21 +289,11 @@ function wireControls(idx: CraftIndex, items: readonly SearchItem[]): void {
     onPick: (item) => setTarget(item.id),
   });
 
-  // Quantity, gold-per-labor and both proficiency fields live in the same bar and all feed the
+  // Quantity, gold-per-labor and the proficiency list live in the same bar and all feed the
   // engine; the search box is the one input there that does not. `<select>` fires `input` too.
   els.controls.addEventListener('input', (ev) => {
     if (ev.target === els.search) return;
     recalc();
-  });
-
-  // "+" opens an exact percentage on top of the preset list; pressing it again drops back to the
-  // list, so the override is always reversible — same contract as the craft/buy and recipe controls.
-  els.profExactToggle.addEventListener('click', () => {
-    const before = controls().profPercent;
-    setProfExactOpen(!profExactOpen);
-    // Opening seeds the field from the list, so the percentage usually does not move — and a full
-    // engine pass plus a tree/buy-list rebuild to redraw what is already on screen is worth skipping.
-    if (controls().profPercent !== before) recalc();
   });
 
   // View only: hide rows, keep the tree (and its scroll position) exactly as it is.

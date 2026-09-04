@@ -54,8 +54,6 @@ export class CalculatorPage {
   readonly qtyInput: Locator;
   readonly goldPerLaborInput: Locator;
   readonly profSelect: Locator;
-  readonly profExact: Locator;
-  readonly profExactToggle: Locator;
   readonly updatedStamp: Locator;
   readonly presetButtons: Locator;
 
@@ -86,8 +84,6 @@ export class CalculatorPage {
     this.qtyInput = this.id('qty-input');
     this.goldPerLaborInput = this.id('gold-per-labor-input');
     this.profSelect = this.id('prof-select');
-    this.profExact = this.id('prof-exact');
-    this.profExactToggle = this.id('prof-exact-toggle');
     this.updatedStamp = this.id('updated-stamp');
     this.presetButtons = this.id('preset-button');
 
@@ -184,17 +180,6 @@ export class CalculatorPage {
   /** Percentages the preset list offers, in render order. */
   async profOptionValues(): Promise<number[]> {
     return this.optionValues(this.profSelect);
-  }
-
-  /** Press "+" / "−": opens the exact-percent field over the list, or drops back to the list. */
-  async toggleExactProficiency(): Promise<void> {
-    await this.profExactToggle.click();
-  }
-
-  /** Open the exact field (if needed) and type a percentage the preset list does not offer. */
-  async setExactProficiency(percent: number): Promise<void> {
-    if (await this.profExact.isHidden()) await this.toggleExactProficiency();
-    await this.profExact.fill(String(percent));
   }
 
   presetButton(itemId: number): Locator {
