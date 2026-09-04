@@ -87,12 +87,22 @@ function parseCsv(text) {
   return rows;
 }
 
+/** Smallest price the UI can show at two decimals — one silver. Nothing priced is worth less. */
+const MIN_PRICE = 0.01;
+
 /**
- * Price cell -> gold number. Strips thousands-commas and a trailing `g`.
+ * Price cell -> gold number, ROUNDED TO TWO DECIMALS. Strips thousands-commas and a trailing `g`.
  * Blank / unparseable / non-positive => null (no price).
  *
- * Note: a 0 in the sheet means "no data", so it becomes null here — unlike the engine, where an
- * explicit user price override of 0 is honoured as "free".
+ * Two decimals here rather than in the formatters, because the rounded number has to be the one the
+ * engine works from: a page that shows `1,100 × 5.87g` and totals it as 6,460.22g (from a hidden
+ * 5.8729) reads as broken arithmetic. The sheet's averages carry four (5.8729 = 5g 87s 29c), and
+ * 872 of 1,540 prices use them.
+ *
+ * A price under half a silver is floored to `MIN_PRICE` instead of rounding to 0: zero means "no
+ * price" downstream, so rounding would turn 22 cheap items into unpriced ones — and a nonzero
+ * price displayed as `0.00g` would read as free either way. The overstatement is at most 0.009g.
+ *
  * @param {string | undefined} raw
  * @returns {number | null}
  */
@@ -105,7 +115,7 @@ function parsePrice(raw) {
   if (!s) return null;
   const n = Number(s);
   if (!Number.isFinite(n) || n <= 0) return null;
-  return n;
+  return Math.max(MIN_PRICE, Math.round(n * 100) / 100);
 }
 
 // ------------------------------------------------------------------- sources

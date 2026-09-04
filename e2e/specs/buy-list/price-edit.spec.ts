@@ -52,6 +52,23 @@ test.describe('buy list — price editing', () => {
     expect(totals.labor).toBe(want.totals.labor);
   });
 
+  test('shows auction-house prices to at most 2 decimals, and multiplies out to the row total', async ({
+    calc,
+  }) => {
+    const values = await calc.priceInputValues();
+    expect(values.length, 'the preset has a buy list to check').toBeGreaterThan(0);
+
+    const tooPrecise = values.filter((v) => (v.split('.')[1] ?? '').length > 2);
+    expect(tooPrecise, 'AH prices are rounded to 2 decimals in tools/build-data.mjs').toEqual([]);
+
+    // The point of rounding the data rather than the display: what the row shows is what the row
+    // charges. `1,100 × 5.87g` has to come to the printed total, not to a hidden 5.8729 × 1,100.
+    for (const row of await calc.visibleBuyRowCells()) {
+      const shown = await calc.priceValue(row.itemId);
+      expectGold(row.total, shown * row.qty, `${row.name}: price × qty against the row total`);
+    }
+  });
+
   test('the reset button restores the auction-house price and the original totals', async ({ calc }) => {
     const original = await calc.priceInput(itemId).inputValue();
     const originalRowTotal = await calc.rowTotalValue(itemId);

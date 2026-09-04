@@ -54,7 +54,7 @@ const GOLD_FMT = new Intl.NumberFormat('en-US', {
   maximumFractionDigits: 2,
 });
 const INT_FMT = new Intl.NumberFormat('en-US');
-const PRICE_FMT = new Intl.NumberFormat('en-US', { maximumFractionDigits: 4 });
+const PRICE_FMT = new Intl.NumberFormat('en-US', { maximumFractionDigits: 2 });
 
 /** `1234.5 -> "1,234.50g"` — the single gold format used everywhere in the UI. */
 export function gold(n: number): string {
@@ -66,12 +66,21 @@ export function int(n: number): string {
   return INT_FMT.format(n);
 }
 
-/** Unit prices inside table cells / tree rows: up to 4 decimals, no trailing zeroes. */
+/**
+ * Unit prices inside table cells / tree rows: up to 2 decimals, no trailing zeroes (`5.87g`, `10g`).
+ * The prices in the data are already rounded to two by `tools/build-data.mjs` — deliberately, so
+ * that the number shown and the number multiplied out are the same one. This only formats.
+ */
 export function price(n: number): string {
   return `${PRICE_FMT.format(n)}g`;
 }
 
-/** Value prefilled into an editable price input — plain number, no grouping, max 4 decimals. */
+/**
+ * Value prefilled into an editable price input — plain number, no grouping. Four decimals, not two
+ * like `price()`: this echoes a value back into a field the user may have typed, and rewriting
+ * their 5.8791 as 5.88 while the engine still charges 5.8791 would be the mismatch that rounding
+ * the data exists to avoid. AH prices reach it already rounded, so it prints two in practice.
+ */
 export function priceInputValue(n: number): string {
   return String(Number(n.toFixed(4)));
 }

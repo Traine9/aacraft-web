@@ -21,6 +21,11 @@ deterministic; the UI carries a note saying so).
   `Item ID, Item Name, 24h Average, 24h Volume, 7d Average, 7d Volume, 30d Average, 30d Volume, Raw Item String` (+ trailing `Last Updated At:` cols in the header row).
   Price = first non-empty of 24h → 7d → 30d average; strip thousands-commas and a trailing `g`.
   Blank = no price.
+  **Rounded to 2 decimals** (the sheet's averages carry 4: `5.8729` = 5g 87s 29c). Rounded HERE and
+  not in the formatters, so the price shown is the price multiplied out — a row reading
+  `1,100 × 5.87g = 6,460.22g` would be broken arithmetic. A price under half a silver is floored to
+  `0.01` rather than rounded to 0, since 0 means "no price" downstream (22 items today; the
+  overstatement is at most 0.009g).
 
 ## Build step — `tools/build-data.mjs` (node, no deps)
 
@@ -122,8 +127,10 @@ Single page, desktop-first, works standalone from `dist/` so it can be dropped i
   clears the override. Its options carry the batch size the same way the node tag does:
   `<recipe name> 10x (70 labor)`, or `<recipe name> (70 labor)` for a x1 recipe — the labor is
   effective labor, after proficiency.
-- **Buy list** table: each row has an editable unit-price `<input>` (prefilled from AH price;
-  editing sets `priceOverride` and recalcs live), qty, row total; a **filter** text input above it
+- **Buy list** table: each row has an editable unit-price `<input>` (prefilled from AH price, so at
+  2 decimals; editing sets `priceOverride` and recalcs live — a hand-typed price is honoured and
+  echoed back at whatever precision it was typed, since it is the user's own number), qty, row
+  total; a **filter** text input above it
   that live-filters rows by substring (the "Darugir-style" search); totals footer
   (buy gold, crafting fees, labor, labor→gold, grand total).
 - A visible note: "No RNG: multi-outcome crafts are counted as one craft = one result."

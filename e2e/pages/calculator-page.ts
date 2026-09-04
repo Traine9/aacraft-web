@@ -343,6 +343,13 @@ export class CalculatorPage {
     return this.buyRow(itemId).locator(sel('price-input'));
   }
 
+  /** What every price field holds, in render order — one round trip for the whole column. */
+  async priceInputValues(): Promise<string[]> {
+    return this.id('price-input').evaluateAll((inputs) =>
+      inputs.map((i) => (i as HTMLInputElement).value),
+    );
+  }
+
   priceReset(itemId: number): Locator {
     return this.buyRow(itemId).locator(sel('price-reset'));
   }

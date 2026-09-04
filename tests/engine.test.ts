@@ -567,6 +567,17 @@ describe.skipIf(!existsSync(dataPath))('real data smoke test', () => {
     expect(Object.keys(real.items).length).toBeGreaterThan(5000);
   });
 
+  it('prices every item to at most 2 decimals, and never to zero', () => {
+    // `tools/build-data.mjs` rounds here so the UI can show a price that its own row total agrees
+    // with. Zero would be worse than imprecise: the engine reads it as "no price".
+    const bad: Array<[string, number]> = [];
+    for (const [id, [, price]] of Object.entries(real.items)) {
+      if (price === null) continue;
+      if (price <= 0 || Math.abs(price - Number(price.toFixed(2))) > 1e-9) bad.push([id, price]);
+    }
+    expect(bad.slice(0, 10), `${bad.length} item(s) with an unrounded or zero price`).toEqual([]);
+  });
+
   it('never emits Coin as a material', () => {
     expect(real.recipes.some((r) => r.mats.some(([id]) => id === 500))).toBe(false);
     expect(real.items['500']).toBeUndefined();
