@@ -142,6 +142,21 @@ describe('recursive expansion', () => {
     expect(res.totals.grandTotal).toBeCloseTo(52.6, 9);
   });
 
+  it('keeps labor out of the grand total, however dear labor is', () => {
+    // Same materials either way: only the labor PRICE changes, and only the decisions may follow.
+    const free = run({ goldPerLabor: 0 });
+    const dear = run({ goldPerLabor: 10 });
+
+    expect(free.totals.grandTotal).toBeCloseTo(free.totals.buyGold + free.totals.feeGold, 9);
+    expect(dear.totals.grandTotal).toBeCloseTo(dear.totals.buyGold + dear.totals.feeGold, 9);
+    // The labor value is still reported, and still moved the craft-vs-buy line (see that suite).
+    expect(dear.totals.laborGold).toBeCloseTo(700, 9);
+    expect(dear.totals.grandTotal).not.toBeCloseTo(
+      dear.totals.buyGold + dear.totals.feeGold + dear.totals.laborGold,
+      9,
+    );
+  });
+
   it('scales with quantity', () => {
     const ten = run({ qty: 10 });
     expect(step(ten, 1)?.crafts).toBe(10);
@@ -169,7 +184,8 @@ describe('craft-vs-buy decision', () => {
     expect(dearLabor.totals.buyGold).toBeCloseTo(220, 9);
     expect(dearLabor.totals.labor).toBe(70);
     expect(dearLabor.totals.laborGold).toBeCloseTo(700, 9);
-    expect(dearLabor.totals.grandTotal).toBeCloseTo(220 + 1.5 + 700, 9);
+    // Labor priced the decision above, but it is not gold paid out — see the totals suite.
+    expect(dearLabor.totals.grandTotal).toBeCloseTo(220 + 1.5, 9);
   });
 
   it('always crafts the target even when buying it would be cheaper', () => {
@@ -365,10 +381,7 @@ describe('crafting fees', () => {
     // 3 Ayanad (1.5 each) + 3 Delphinad (0.5) + 3 Magnificent (0.1) + 2 Cloth crafts (0)
     expect(step(res, 1)?.feeTotal).toBeCloseTo(4.5, 9);
     expect(res.totals.feeGold).toBeCloseTo(6.3, 9);
-    expect(res.totals.grandTotal).toBeCloseTo(
-      res.totals.buyGold + res.totals.feeGold + res.totals.laborGold,
-      9,
-    );
+    expect(res.totals.grandTotal).toBeCloseTo(res.totals.buyGold + res.totals.feeGold, 9);
   });
 });
 
@@ -498,10 +511,8 @@ describe.skipIf(!existsSync(dataPath))('real data smoke test', () => {
     expect(res.steps.at(-1)?.crafts).toBe(22);
     for (const v of Object.values(res.totals)) expect(Number.isFinite(v)).toBe(true);
     expect(res.totals.grandTotal).toBeGreaterThan(0);
-    expect(res.totals.grandTotal).toBeCloseTo(
-      res.totals.buyGold + res.totals.feeGold + res.totals.laborGold,
-      6,
-    );
+    expect(res.totals.grandTotal).toBeCloseTo(res.totals.buyGold + res.totals.feeGold, 6);
+    expect(res.totals.laborGold).toBeGreaterThan(0); // reported, but deliberately not in the total
 
     const g = (n: number) => n.toLocaleString('en-US', { maximumFractionDigits: 2 });
     console.log(
@@ -512,7 +523,7 @@ describe.skipIf(!existsSync(dataPath))('real data smoke test', () => {
           `   (${res.buyList.filter((b) => b.noPrice).length} unpriced)`,
         `    buy gold   : ${g(res.totals.buyGold)}`,
         `    fees       : ${g(res.totals.feeGold)}`,
-        `    labor      : ${g(res.totals.labor)}  ->  ${g(res.totals.laborGold)} g`,
+        `    labor      : ${g(res.totals.labor)}  ->  ${g(res.totals.laborGold)} g  (not in the total)`,
         `    GRAND TOTAL: ${g(res.totals.grandTotal)} g  (${g(res.totals.grandTotal / 22)} g each)`,
         `    top buys   : ${res.buyList
           .slice(0, 8)

@@ -568,6 +568,21 @@ tr[data-noprice] .price-input {
   padding-top: 10px;
 }
 
+/* Labor is reported but not billed — dim it so the grand total cannot be misread as a sum. */
+.buy-table tfoot .excluded th,
+.buy-table tfoot .excluded td {
+  color: var(--text-dim);
+}
+
+.foot-note {
+  color: var(--text-dim);
+  font-size: 11px;
+  font-weight: 400;
+  text-transform: none;
+  letter-spacing: 0;
+  margin-left: 6px;
+}
+
 .buy-table tfoot .grand th,
 .buy-table tfoot .grand td {
   color: var(--accent);

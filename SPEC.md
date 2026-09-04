@@ -70,7 +70,9 @@ occurrence as buy):
 Outputs:
 - `steps`: aggregated craft list, bottom-up — `{recipeId, itemName, crafts, laborEach, laborTotal, feeTotal, matsPerCraft}` (crafts = ceil(neededUnits / outAmount); surplus is fine, no fractional crafts).
 - `buyList`: aggregated leaf/bought items — `{itemId, name, qty, unitPrice, total, noPrice, overridden}` sorted by total desc.
-- `totals`: `{buyGold, feeGold, labor, laborGold, grandTotal}`.
+- `totals`: `{buyGold, feeGold, labor, laborGold, grandTotal}`. `grandTotal = buyGold + feeGold`:
+  labor is **not** money you hand over, so it is reported (`labor`, `laborGold`) but never billed.
+  `goldPerLabor` still prices every craft-vs-buy decision above — it just does not inflate the bill.
 
 ## UI — `index.html` + `src/main.ts` (+ `src/ui/…`), Vite, vanilla TS, no framework
 

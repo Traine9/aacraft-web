@@ -94,7 +94,12 @@ export interface Totals {
   buyGold: number;
   feeGold: number;
   labor: number;
+  /**
+   * What that labor is worth at `goldPerLabor`. It decides every craft-vs-buy call, but it is
+   * NOT part of `grandTotal`: labor is spent, not paid for — you never hand it to anyone.
+   */
   laborGold: number;
+  /** Gold actually leaving the purse: materials + crafting fees. Labor is deliberately excluded. */
   grandTotal: number;
 }
 
@@ -524,7 +529,8 @@ export function calculate(index: CraftIndex, opts: CalcOptions): CalcResult {
     feeGold,
     labor,
     laborGold,
-    grandTotal: buyGold + feeGold + laborGold,
+    // Labor is not gold you pay out — it only prices the craft-vs-buy choice above.
+    grandTotal: buyGold + feeGold,
   };
 
   const result: CalcResult = {
