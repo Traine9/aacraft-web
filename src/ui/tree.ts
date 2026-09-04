@@ -49,6 +49,8 @@ function nodeEl(node: TreeNode, expandedIds: ReadonlySet<number>, depth: number)
   if (node.mode === 'craft') {
     const crafts = node.crafts ?? 0;
     const laborEach = node.laborEach ?? 0;
+    const out = node.outAmount ?? 1;
+    const produced = crafts * out;
     row.appendChild(
       el('span', {
         className: 'node-detail',
@@ -56,6 +58,19 @@ function nodeEl(node: TreeNode, expandedIds: ReadonlySet<number>, depth: number)
         text: `${int(crafts)} craft${crafts === 1 ? '' : 's'} × ${int(laborEach)} labor = ${int(crafts * laborEach)} labor`,
       }),
     );
+    // Batch recipes make 10 or 100 units at a time. Without this the materials below look
+    // inexplicable: one craft of Kraken's Might buys reagents for a hundred of them.
+    if (out > 1) {
+      row.appendChild(
+        el('span', {
+          className: 'node-yield',
+          testid: 'node-yield',
+          text: `×${int(out)} per craft → ${int(produced)} for ${int(node.qty)} needed`,
+        }),
+      );
+    }
+    // Whole crafts only, so a batch recipe overshoots — and the overshoot is paid for in full.
+    if (produced > node.qty) row.appendChild(badge('surplus', `+${int(produced - node.qty)} spare`));
   } else {
     const unit = node.unitPrice ?? 0;
     row.appendChild(

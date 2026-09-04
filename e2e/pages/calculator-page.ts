@@ -213,6 +213,16 @@ export class CalculatorPage {
     return this.rowPart(itemId, `node-mode-${mode}`);
   }
 
+  /** The batch-yield line of a craft node — only rendered when one craft makes several units. */
+  nodeYield(itemId: number): Locator {
+    return this.rowPart(itemId, 'node-yield');
+  }
+
+  /** "+K spare" — the overshoot of a batch recipe, since whole crafts cannot be split. */
+  surplusBadge(itemId: number): Locator {
+    return this.nodeBadge(itemId, 'surplus');
+  }
+
   /** The recipe `<select>` of a multi-recipe node — its value is the active recipe id. */
   recipeSelect(itemId: number): Locator {
     return this.rowPart(itemId, 'recipe-select');

@@ -148,6 +148,39 @@ export function firstForcibleSubCraft(base: EngineInputs): Subject {
   return { itemId: child.itemId, name: child.name };
 }
 
+/** A craft node whose recipe makes several units at a time — what the yield display is for. */
+export interface BatchCraft extends Subject {
+  outAmount: number;
+  crafts: number;
+  /** Units this branch needs; `crafts * outAmount - needed` is the overshoot the badge shows. */
+  needed: number;
+}
+
+/**
+ * The first craft node IN DOM ORDER whose recipe yields more than one unit per craft.
+ *
+ * Not the shallowest, unlike the other finders here: `crafts` and `needed` are PER BRANCH, and an
+ * item repeated in the tree has different ones at each occurrence (Fine Lumber needs 44 at its
+ * first occurrence and 88 higher up). `CalculatorPage.treeNode` resolves to the first occurrence,
+ * so that is the branch whose numbers the spec can assert. `walkTree` already visits parents
+ * before children, i.e. in DOM order.
+ */
+export function firstBatchCraft(base: EngineInputs): BatchCraft {
+  let found: BatchCraft | null = null;
+  walkTree(expected(base).tree, (node) => {
+    if (found || node.mode !== 'craft' || (node.outAmount ?? 1) <= 1) return;
+    found = {
+      itemId: node.itemId,
+      name: node.name,
+      outAmount: node.outAmount ?? 1,
+      crafts: node.crafts ?? 0,
+      needed: node.qty,
+    };
+  });
+  if (!found) throw new Error('no batch recipe in this breakdown — the yield spec has no subject');
+  return found;
+}
+
 /** A multi-recipe craft node plus a non-default recipe to switch it to. */
 export interface RecipeChoice extends Subject {
   defaultRecipeId: number;

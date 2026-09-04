@@ -426,6 +426,19 @@ describe('decision tree', () => {
     expect(forced.tree.children?.[0]?.craftable).toBe(true);
   });
 
+  it('reports the batch yield per craft, so the UI can explain the material amounts', () => {
+    // Cloth is made 4 at a time; 2 are needed, so one craft overshoots by 2.
+    const res = run({ target: 5, qty: 2 });
+    expect(res.tree.outAmount).toBe(4);
+    expect(res.tree.crafts).toBe(1);
+    expect(res.tree.qty).toBe(2);
+
+    // A x1 recipe still reports its yield, so the UI never has to guess.
+    expect(run().tree.outAmount).toBe(1);
+    // Bought nodes are not crafted, so they have none.
+    expect(run().tree.children?.[1]?.outAmount).toBeUndefined();
+  });
+
   it('stops at a force-bought node', () => {
     const res = run({ modeOverride: { 2: 'buy' } });
     const delphinad = res.tree.children?.[0];

@@ -374,6 +374,13 @@ button {
   white-space: nowrap;
 }
 
+/* Batch yield — brighter than the labor detail, because it explains the material amounts. */
+.node-yield {
+  color: var(--craft);
+  font-size: 12.5px;
+  white-space: nowrap;
+}
+
 /* The two small per-node controls share one look. */
 .recipe-select,
 .mode-btn {
@@ -442,7 +449,8 @@ button {
   color: var(--danger);
 }
 
-.badge-cycle {
+.badge-cycle,
+.badge-surplus {
   color: var(--warn);
 }
 

@@ -85,7 +85,11 @@ Single page, desktop-first, works standalone from `dist/` so it can be dropped i
   unrelated item (Blazing Sun Gauntlets); presets take item ids. Clicking a preset fills
   target+qty and recalcs.
 - Craft tree: collapsible tree of the decision (craft nodes show crafts × labor; buy nodes show
-  qty × price); per craftable node a craft/buy toggle wired to `modeOverride`. Nodes whose item
+  qty × price); per craftable node a craft/buy toggle wired to `modeOverride`. A craft node whose
+  recipe is a batch (`outAmount > 1`) also states the yield — `×N per craft → produced for needed`
+  — plus a `+K spare` badge for the overshoot, since whole crafts must be paid for in full and the
+  materials below are otherwise inexplicable (one craft of Kraken's Might buys reagents for 100).
+  Nodes whose item
   several recipes make (bought ones too — a cheaper recipe can flip the decision back to craft)
   carry a recipe `<select>` (options = recipe name, output amount, effective labor; engine default
   first) wired to `recipeOverride`; picking the default back clears the override.

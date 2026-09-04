@@ -126,6 +126,9 @@ export interface TreeNode {
   recipeId?: number;
   recipeName?: string;
   crafts?: number;
+  /** Units one craft yields — batch recipes make 10 or 100 at a time, so `crafts` alone
+   *  understates what the materials below actually buy. */
+  outAmount?: number;
   laborEach?: number;
   children?: TreeNode[];
 }
@@ -588,6 +591,7 @@ function buildTree(
     node.recipeId = recipe.id;
     node.recipeName = recipe.name;
     node.crafts = crafts;
+    node.outAmount = outAmount(recipe);
     node.laborEach = calc.labor(recipe);
 
     onPath.add(itemId);

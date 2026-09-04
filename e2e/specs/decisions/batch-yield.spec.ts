@@ -1,0 +1,47 @@
+/**
+ * batch-yield.spec.ts — a craft node must say how many units one craft makes.
+ *
+ * Many recipes are batches: the "Fast/Ultrafast Batch Processing" variants make 10 or 100 units at
+ * a time, and the engine defaults to the biggest batch. Without the yield on screen the buy list
+ * is inexplicable — one craft of Kraken's Might buys reagents for a hundred of them — and the
+ * overshoot (whole crafts cannot be split, so the surplus is paid for in full) is invisible.
+ *
+ * The subject node is picked from the engine at runtime by `lib/oracle.ts`.
+ */
+import { test, expect } from '@lib/fixtures';
+import { firstBatchCraft, mainPreset, mainPresetInputs } from '@lib/oracle';
+
+const preset = mainPreset();
+const base = mainPresetInputs();
+const subject = firstBatchCraft(base);
+
+test.describe('batch recipe yield', () => {
+  test.beforeEach(async ({ calc }) => {
+    await calc.openWithPreset(preset.itemId);
+    await calc.expandAll();
+  });
+
+  test('a batch craft node states its yield per craft and what that produces', async ({ calc }) => {
+    const produced = subject.crafts * subject.outAmount;
+    await expect(
+      calc.nodeYield(subject.itemId),
+      `${subject.name} is made ${subject.outAmount} at a time`,
+    ).toHaveText(
+      `×${subject.outAmount.toLocaleString('en-US')} per craft → ` +
+        `${produced.toLocaleString('en-US')} for ${subject.needed.toLocaleString('en-US')} needed`,
+    );
+  });
+
+  test('the overshoot of a batch craft is flagged, and a x1 recipe has neither line', async ({
+    calc,
+  }) => {
+    const spare = subject.crafts * subject.outAmount - subject.needed;
+    const badge = calc.surplusBadge(subject.itemId);
+    if (spare > 0) await expect(badge).toHaveText(`+${spare.toLocaleString('en-US')} spare`);
+    else await expect(badge, 'a batch that comes out even wastes nothing').toHaveCount(0);
+
+    // The target is crafted one at a time in every preset, so it carries no yield line at all.
+    await expect(calc.nodeYield(preset.itemId)).toHaveCount(0);
+    await expect(calc.surplusBadge(preset.itemId)).toHaveCount(0);
+  });
+});
