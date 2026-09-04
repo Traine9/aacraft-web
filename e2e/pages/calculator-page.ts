@@ -156,6 +156,11 @@ export class CalculatorPage {
     return this.id('search-option', `[data-item-id="${itemId}"]`);
   }
 
+  /** The "10x" tag on a popup row whose item is made in batches. */
+  popupBatchTag(itemId: number): Locator {
+    return this.searchOption(itemId).locator('[data-testid="popup-batch"]');
+  }
+
   /** Item id of the highlighted popup row. */
   async activeOptionId(): Promise<number> {
     return Number(await this.activeOption.getAttribute('data-item-id'));

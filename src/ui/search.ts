@@ -1,11 +1,17 @@
 /** Item search: substring match over craftable items with a keyboard-navigable popup. */
-import { byNameThenId, itemName, type CraftIndex } from '../engine';
-import { clear, el } from './dom';
+import { byNameThenId, defaultRecipe, itemName, outAmount, type CraftIndex } from '../engine';
+import { batchLabel, clear, el } from './dom';
 
 export interface SearchItem {
   id: number;
   name: string;
   lower: string;
+  /**
+   * Units the item's default recipe makes at once. Deliberately kept out of `name`: the name is
+   * what the query matches and what the input is filled with on pick, and "Alluvion Love 10x"
+   * would match nothing on a re-search.
+   */
+  out: number;
 }
 
 /** Longest popup the SPEC allows; also the only cap the matcher needs. */
@@ -16,7 +22,13 @@ export function buildSearchItems(index: CraftIndex): SearchItem[] {
   const items: SearchItem[] = [];
   for (const itemId of index.recipesByProduct.keys()) {
     const name = itemName(index, itemId);
-    items.push({ id: itemId, name, lower: name.toLowerCase() });
+    const recipe = defaultRecipe(index, itemId);
+    items.push({
+      id: itemId,
+      name,
+      lower: name.toLowerCase(),
+      out: recipe ? outAmount(recipe) : 1,
+    });
   }
   items.sort(byNameThenId);
   return items;
@@ -104,6 +116,11 @@ export function initSearch(opts: SearchOptions): void {
         },
         children: [
           el('span', { className: 'popup-name', text: item.name }),
+          // Same tag as the tree node and the heading: a batch item is worth knowing about before
+          // you pick it, since asking for 1 buys reagents for the whole batch.
+          ...(item.out > 1
+            ? [el('span', { className: 'batch-tag', testid: 'popup-batch', text: batchLabel(item.out) })]
+            : []),
           el('span', { className: 'popup-id', text: `· ${item.id}` }),
         ],
       });

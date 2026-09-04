@@ -235,8 +235,17 @@ export function effectiveLabor(labor: number, percent: number): number {
 }
 
 /** Units produced by one craft (a recipe never yields less than one). */
-function outAmount(r: Recipe): number {
+export function outAmount(r: Recipe): number {
   return Math.max(1, r.out[1]);
+}
+
+/**
+ * The recipe an item defaults to — first in `compareRecipes` order, i.e. the biggest batch. Null
+ * for an item nothing makes. This is what the UI shows before any `recipeOverride` exists (the
+ * search popup names items it has not calculated yet).
+ */
+export function defaultRecipe(index: CraftIndex, itemId: number): Recipe | null {
+  return index.recipesByProduct.get(itemId)?.[0] ?? null;
 }
 
 /** Whole crafts needed to obtain `units` output units — surplus is fine, fractions are not. */

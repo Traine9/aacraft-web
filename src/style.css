@@ -212,6 +212,12 @@ button:focus-visible {
   background: var(--accent-dim);
 }
 
+/* The row is `space-between`; without this the batch tag would drift into the middle instead of
+ * staying attached to the name it qualifies. */
+.popup-row .batch-tag {
+  margin-right: auto;
+}
+
 .popup-id {
   color: var(--text-dim);
   font-variant-numeric: tabular-nums;

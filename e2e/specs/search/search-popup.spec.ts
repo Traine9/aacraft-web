@@ -7,7 +7,7 @@
  * the cap and the ranking against the oracle, not a row count it knows in advance.
  */
 import { test, expect } from '@lib/fixtures';
-import { SEARCH_MAX_ROWS, searchHits } from '@lib/oracle';
+import { batchTarget, SEARCH_MAX_ROWS, searchHits } from '@lib/oracle';
 
 /** Deliberately broad: more matches than the popup may show, so the cap is exercised. */
 const QUERY = 'typhoon';
@@ -87,5 +87,20 @@ test.describe('item search popup', () => {
 
     await expect(calc.searchPopup).toBeHidden();
     await expect(calc.searchOptions).toHaveCount(0);
+  });
+
+  test('tags a batch item with its batch size, but picks it under its bare name', async ({
+    calc,
+  }) => {
+    const target = batchTarget();
+
+    await calc.searchFor(target.name);
+    await expect(calc.popupBatchTag(target.itemId)).toHaveText(
+      `${target.outAmount.toLocaleString('en-US')}x`,
+    );
+
+    // The tag is decoration, not part of the name: the input must stay searchable after a pick.
+    await calc.searchOption(target.itemId).click();
+    await expect(calc.searchInput).toHaveValue(target.name);
   });
 });
