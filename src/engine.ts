@@ -42,8 +42,11 @@ export interface CalcOptions {
   qty: number;
   /** Gold value of one labor point. Higher => crafting looks more expensive => more buying. */
   goldPerLabor: number;
-  /** Max proficiency: effective labor = ceil(labor * 0.7). Defaults to true. */
-  profReduction?: boolean;
+  /**
+   * Proficiency discount, as the PERCENT of labor it saves: `0` none, `30` the old "max
+   * proficiency". Clamped to 0…100, defaults to `DEFAULT_PROF_PERCENT`.
+   */
+  profPercent?: number;
   /** Per-item unit price replacing the AH price everywhere. */
   priceOverride?: Readonly<Record<number, number>>;
   /** Per-item forced craft/buy decision. */
@@ -209,11 +212,25 @@ export function itemPrice(index: CraftIndex, itemId: number): number | null {
   return index.entryById.get(itemId)?.[1] ?? null;
 }
 
-/** Effective labor for one craft. `ceil(labor * 0.7)`, computed as `ceil(labor * 7 / 10)` so that
- *  floating point cannot round 455 up to 456. */
-export function effectiveLabor(labor: number, profReduction: boolean): number {
-  if (!profReduction) return labor;
-  return Math.ceil((labor * 7) / 10);
+/** The proficiency discount assumed when none is given — what the old "max proficiency" meant. */
+export const DEFAULT_PROF_PERCENT = 30;
+
+/** A usable proficiency discount: finite, 0…100. Anything else falls back to the default. */
+export function clampProfPercent(percent: number | undefined): number {
+  if (percent === undefined || !Number.isFinite(percent)) return DEFAULT_PROF_PERCENT;
+  return Math.min(100, Math.max(0, percent));
+}
+
+/**
+ * Labor left for one craft after a proficiency discount of `percent`, rounded up.
+ *
+ * Multiplies before dividing (`labor * (100 - p) / 100`, not `labor * 0.7`) so binary floating
+ * point cannot turn 455 into 455.00000000000006 and then ceil it to 456.
+ */
+export function effectiveLabor(labor: number, percent: number): number {
+  const p = clampProfPercent(percent);
+  if (p === 0) return labor;
+  return Math.ceil((labor * (100 - p)) / 100);
 }
 
 /** Units produced by one craft (a recipe never yields less than one). */
@@ -245,7 +262,7 @@ class Calculator {
   private readonly index: CraftIndex;
   /** Sanitized once here; `calculate` reuses it for the labor→gold total. */
   readonly goldPerLabor: number;
-  private readonly profReduction: boolean;
+  private readonly profPercent: number;
   private readonly priceOverride: Readonly<Record<number, number>>;
   private readonly modeOverride: Readonly<Record<number, Mode>>;
   private readonly recipeOverride: Readonly<Record<number, number>>;
@@ -256,7 +273,7 @@ class Calculator {
   constructor(index: CraftIndex, opts: CalcOptions) {
     this.index = index;
     this.goldPerLabor = Number.isFinite(opts.goldPerLabor) ? opts.goldPerLabor : 0;
-    this.profReduction = opts.profReduction ?? true;
+    this.profPercent = clampProfPercent(opts.profPercent);
     this.priceOverride = opts.priceOverride ?? {};
     this.modeOverride = opts.modeOverride ?? {};
     this.recipeOverride = opts.recipeOverride ?? {};
@@ -281,7 +298,7 @@ class Calculator {
   }
 
   labor(recipe: Recipe): number {
-    return effectiveLabor(recipe.labor, this.profReduction);
+    return effectiveLabor(recipe.labor, this.profPercent);
   }
 
   private buyOnly(price: number | null, overridden: boolean, modeOverridden: boolean): Resolved {

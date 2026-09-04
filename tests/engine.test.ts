@@ -4,6 +4,8 @@ import { fileURLToPath } from 'node:url';
 import {
   buildIndex,
   calculate,
+  clampProfPercent,
+  DEFAULT_PROF_PERCENT,
   effectiveLabor,
   type BuyRow,
   type CalcOptions,
@@ -87,13 +89,29 @@ const buy = (res: CalcResult, itemId: number): BuyRow | undefined =>
 // ---------------------------------------------------------------------------
 
 describe('effectiveLabor', () => {
-  it('applies max proficiency as ceil(labor * 0.7) without float drift', () => {
-    expect(effectiveLabor(650, true)).toBe(455); // 650 * 0.7 === 455.00000000000006 in binary float
-    expect(effectiveLabor(100, true)).toBe(70);
-    expect(effectiveLabor(50, true)).toBe(35);
-    expect(effectiveLabor(20, true)).toBe(14);
-    expect(effectiveLabor(1, true)).toBe(1); // ceil(0.7)
-    expect(effectiveLabor(650, false)).toBe(650);
+  it('discounts by the given percent, rounding up, without float drift', () => {
+    expect(effectiveLabor(650, 30)).toBe(455); // 650 * 0.7 === 455.00000000000006 in binary float
+    expect(effectiveLabor(100, 30)).toBe(70);
+    expect(effectiveLabor(50, 30)).toBe(35);
+    expect(effectiveLabor(20, 30)).toBe(14);
+    expect(effectiveLabor(1, 30)).toBe(1); // ceil(0.7)
+    expect(effectiveLabor(650, 0)).toBe(650);
+  });
+
+  it('covers the whole 0…40 range the UI offers, in 5 % steps', () => {
+    const at = (p: number) => effectiveLabor(100, p);
+    expect([0, 5, 10, 15, 20, 25, 30, 35, 40].map(at)).toEqual([100, 95, 90, 85, 80, 75, 70, 65, 60]);
+    // Exact, non-step values work identically — that is what the "+" field is for.
+    expect(effectiveLabor(100, 27)).toBe(73);
+    expect(effectiveLabor(650, 27)).toBe(475); // ceil(474.5)
+  });
+
+  it('falls back to the default and clamps nonsense', () => {
+    expect(clampProfPercent(undefined)).toBe(DEFAULT_PROF_PERCENT);
+    expect(clampProfPercent(Number.NaN)).toBe(DEFAULT_PROF_PERCENT);
+    expect(clampProfPercent(-10)).toBe(0);
+    expect(clampProfPercent(500)).toBe(100);
+    expect(effectiveLabor(100, 100)).toBe(0); // a full discount is free, not negative
   });
 });
 
@@ -205,26 +223,37 @@ describe('craft-vs-buy decision', () => {
   });
 });
 
-describe('profReduction', () => {
-  it('reduces labor by 30% (rounded up) when enabled', () => {
-    const on = run({ profReduction: true });
-    const off = run({ profReduction: false });
+describe('profPercent', () => {
+  it('scales the whole labor bill by the discount', () => {
+    const at30 = run({ profPercent: 30 });
+    const at0 = run({ profPercent: 0 });
 
-    expect(on.totals.labor).toBe(126); // 70 + 35 + 14 + 7
-    expect(off.totals.labor).toBe(180); // 100 + 50 + 20 + 10
-    expect(step(on, 1)?.laborEach).toBe(70);
-    expect(step(off, 1)?.laborEach).toBe(100);
+    expect(at30.totals.labor).toBe(126); // 70 + 35 + 14 + 7
+    expect(at0.totals.labor).toBe(180); // 100 + 50 + 20 + 10
+    expect(step(at30, 1)?.laborEach).toBe(70);
+    expect(step(at0, 1)?.laborEach).toBe(100);
+
+    // Every step the UI offers is monotonic: more proficiency is never more labor.
+    const byStep = [0, 5, 10, 15, 20, 25, 30, 35, 40].map((p) => run({ profPercent: p }).totals.labor);
+    expect(byStep).toEqual([...byStep].sort((a, b) => b - a));
+    expect(byStep.at(-1)).toBe(run({ profPercent: 40 }).totals.labor);
   });
 
-  it('defaults to enabled', () => {
+  it('defaults to 30%', () => {
     expect(run().totals.labor).toBe(126);
+    expect(run({ profPercent: DEFAULT_PROF_PERCENT }).totals.labor).toBe(126);
+  });
+
+  it('honours an exact, off-step percentage', () => {
+    // ceil(100*0.73) + ceil(50*0.73) + ceil(20*0.73) + ceil(10*0.73) = 73 + 37 + 15 + 8
+    expect(run({ profPercent: 27 }).totals.labor).toBe(133);
   });
 
   it('can change a craft-vs-buy decision', () => {
     // At 3 g/labor cloth is bought either way, so Magnificent costs 2 + 10 + 0.1 + labor * 3.
-    // Labor 20 -> 14 effective with proficiency: 54.1 (craft) vs 72.1 without it (price is 60).
-    const withProf = run({ goldPerLabor: 3, profReduction: true });
-    const noProf = run({ goldPerLabor: 3, profReduction: false });
+    // Labor 20 -> 14 effective at 30%: 54.1 (craft) vs 72.1 at 0% (price is 60).
+    const withProf = run({ goldPerLabor: 3, profPercent: 30 });
+    const noProf = run({ goldPerLabor: 3, profPercent: 0 });
     expect(withProf.steps.map((s) => s.itemId)).toEqual([4, 2, 1]);
     expect(noProf.steps.map((s) => s.itemId)).toEqual([1]);
     expect(buy(noProf, 2)?.unitPrice).toBe(200);
@@ -501,7 +530,7 @@ describe.skipIf(!existsSync(dataPath))('real data smoke test', () => {
       target: TYPHOON_ITEM,
       qty: 22,
       goldPerLabor: 0.3,
-      profReduction: true,
+      profPercent: 30,
     });
 
     expect(res.error).toBeUndefined();
@@ -518,7 +547,7 @@ describe.skipIf(!existsSync(dataPath))('real data smoke test', () => {
     console.log(
       [
         '',
-        `  22x Typhoon Trade Pack Storage (item ${TYPHOON_ITEM}) @ 0.3 g/labor, max proficiency`,
+        `  22x Typhoon Trade Pack Storage (item ${TYPHOON_ITEM}) @ 0.3 g/labor, 30% proficiency`,
         `    steps      : ${res.steps.length}   buy rows: ${res.buyList.length}` +
           `   (${res.buyList.filter((b) => b.noPrice).length} unpriced)`,
         `    buy gold   : ${g(res.totals.buyGold)}`,

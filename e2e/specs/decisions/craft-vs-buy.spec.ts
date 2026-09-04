@@ -3,7 +3,7 @@
  *
  *  1. gold per labor — the price of the labor a craft burns. Raise it far enough and a crafted
  *     material becomes cheaper to buy: the node flips and the labor total falls.
- *  2. max proficiency — off means full labor cost on every craft, so the labor total rises.
+ *  2. proficiency — 0 % means full labor cost on every craft, so the labor total rises.
  *  3. the per-node craft/buy toggle — forces one item, collapsing its subtree into the buy list;
  *     pressing the same button again returns the item to the automatic decision.
  *
@@ -18,6 +18,7 @@ import {
   firstForcibleSubCraft,
   mainPreset,
   mainPresetInputs,
+  UI_PROF_PERCENT,
 } from '@lib/oracle';
 
 const preset = mainPreset();
@@ -53,19 +54,19 @@ test.describe('craft-vs-buy decisions', () => {
     expectGold(after.buyGold, want.totals.buyGold, 'buy gold at the higher labor price');
   });
 
-  test('turning max proficiency off raises the labor total', async ({ calc }) => {
+  test('dropping proficiency to 0% raises the labor total', async ({ calc }) => {
     const before = await calc.totals();
 
-    await calc.setProficiency(false);
+    await calc.setProficiency(0);
 
-    const want = expected({ ...base, profReduction: false });
+    const want = expected({ ...base, profPercent: 0 });
     const after = await calc.totals();
     expect(after.labor, 'no proficiency discount means more labor').toBeGreaterThan(before.labor);
     expect(after.labor).toBe(want.totals.labor);
     expectGold(after.grandTotal, want.totals.grandTotal, 'grand total without proficiency');
 
-    // ...and back: the checkbox is not one-way.
-    await calc.setProficiency(true);
+    // ...and back: the selector is not one-way.
+    await calc.setProficiency(UI_PROF_PERCENT);
     expect(await calc.totals()).toEqual(before);
   });
 

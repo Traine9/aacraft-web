@@ -50,7 +50,9 @@ Inputs:
 - `goldPerLabor: number` — the global "gold labors" field. Meaning: 1 labor point is worth this
   many gold. When deciding craft-vs-buy for a material, if AH price ≤ recursive craft cost
   (materials + fee + labor × goldPerLabor), the AH price wins.
-- `profReduction: boolean` (default true) — max proficiency: effective labor = `ceil(labor * 0.7)`.
+- `profPercent: number` (default 30, clamped 0…100) — the proficiency discount as a percent of
+  labor saved: effective labor = `ceil(labor * (100 - profPercent) / 100)`, multiplied before
+  dividing so floats cannot round 455 up to 456.
 - Overrides (all per item id):
   - `priceOverride[itemId]` — user-edited unit price (replaces AH price everywhere).
   - `modeOverride[itemId]: 'craft' | 'buy'` — force the decision.
@@ -81,16 +83,21 @@ Single page, desktop-first, works standalone from `dist/` so it can be dropped i
 - Top bar: **item search** (input; popup dropdown listing matching craftable items — substring,
   case-insensitive, keyboard ↑↓⏎, max ~50 rows, shows name + id), **quantity**,
   **gold per labor** field with a short hint: "If the AH price is below the craft cost at this
-  labor value, the AH price is used", **max proficiency** checkbox, and the data `updated` stamp.
+  labor value, the AH price is used", a **proficiency** control, and the data `updated` stamp.
+  The proficiency control is a `<select>` of 0 %, 5 % … 40 % (30 % preselected) plus a `+` button
+  that opens an exact-percent field on top of it; pressing `+` again drops back to the list, so
+  the override is reversible like every other one on the page.
 - Preset buttons (from `src/presets.ts`): at minimum `22× Typhoon Trade Pack Storage`
   (itemId **35792**, qty 22). Note 7429 is the *recipe* id for that pack — item 7429 is an
   unrelated item (Blazing Sun Gauntlets); presets take item ids. Clicking a preset fills
   target+qty and recalcs.
 - Craft tree: collapsible tree of the decision (craft nodes show crafts × labor; buy nodes show
   qty × price); per craftable node a craft/buy toggle wired to `modeOverride`. A craft node whose
-  recipe is a batch (`outAmount > 1`) also states the yield — `×N per craft → produced for needed`
-  — plus a `+K spare` badge for the overshoot, since whole crafts must be paid for in full and the
-  materials below are otherwise inexplicable (one craft of Kraken's Might buys reagents for 100).
+  recipe is a batch (`outAmount > 1`) carries the batch size next to its name (`Fine Lumber 10x`)
+  and states what that adds up to — `→ produced for needed` — plus a `+K spare` badge for the
+  overshoot, since whole crafts must be paid for in full and the materials below are otherwise
+  inexplicable (one craft of Kraken's Might buys reagents for 100). Recipe options are labelled
+  the same way: `<recipe name> 10x (70 labor)`, or just `(70 labor)` for a x1 recipe.
   Nodes whose item
   several recipes make (bought ones too — a cheaper recipe can flip the decision back to craft)
   carry a recipe `<select>` (options = recipe name, output amount, effective labor; engine default

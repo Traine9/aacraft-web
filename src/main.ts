@@ -12,6 +12,7 @@ import {
   buildIndex,
   byNameThenId,
   calculate,
+  clampProfPercent,
   itemName,
   type BuyRow,
   type CalcResult,
@@ -72,7 +73,9 @@ const els = {
   searchPopup: must<HTMLElement>('#search-popup'),
   qty: must<HTMLInputElement>('#qty'),
   goldPerLabor: must<HTMLInputElement>('#gold-per-labor'),
-  prof: must<HTMLInputElement>('#prof'),
+  prof: must<HTMLSelectElement>('#prof'),
+  profExact: must<HTMLInputElement>('#prof-exact'),
+  profExactToggle: must<HTMLButtonElement>('#prof-exact-toggle'),
   presets: must<HTMLElement>('#presets'),
   targetLine: must<HTMLElement>('#target-line'),
   tree: must<HTMLElement>('#tree'),
@@ -88,13 +91,14 @@ const els = {
 };
 
 /** The engine inputs, read straight from the fields and sanitized. */
-function controls(): { qty: number; goldPerLabor: number; profReduction: boolean; filter: string } {
+function controls(): { qty: number; goldPerLabor: number; profPercent: number; filter: string } {
   const qty = Math.floor(Number(els.qty.value));
   const gpl = Number(els.goldPerLabor.value);
   return {
     qty: Number.isFinite(qty) && qty >= 1 ? qty : 1,
     goldPerLabor: Number.isFinite(gpl) && gpl >= 0 ? gpl : 0,
-    profReduction: els.prof.checked,
+    // The exact field, while it is open, overrides the preset list behind it.
+    profPercent: clampProfPercent(Number(els.profExact.hidden ? els.prof.value : els.profExact.value)),
     filter: els.filter.value,
   };
 }
@@ -174,7 +178,7 @@ function recalc(opts: { patchBuy?: boolean } = {}): void {
     target: state.target,
     qty: c.qty,
     goldPerLabor: c.goldPerLabor,
-    profReduction: c.profReduction,
+    profPercent: c.profPercent,
     priceOverride: state.priceOverride,
     modeOverride: state.modeOverride,
     recipeOverride: state.recipeOverride,
@@ -285,10 +289,25 @@ function wireControls(idx: CraftIndex, items: readonly SearchItem[]): void {
     onPick: (item) => setTarget(item.id),
   });
 
-  // Quantity, gold-per-labor and the proficiency checkbox all live in the same bar and all feed
-  // the engine; the search box is the one input there that does not.
+  // Quantity, gold-per-labor and both proficiency fields live in the same bar and all feed the
+  // engine; the search box is the one input there that does not. `<select>` fires `input` too.
   els.controls.addEventListener('input', (ev) => {
     if (ev.target === els.search) return;
+    recalc();
+  });
+
+  // "+" opens an exact percentage on top of the preset list; pressing it again drops back to the
+  // list, so the override is always reversible — same contract as the craft/buy and recipe controls.
+  els.profExactToggle.addEventListener('click', () => {
+    // `hidden` is `boolean | "until-found"` in the DOM types; only ever a boolean here.
+    const opening = Boolean(els.profExact.hidden);
+    if (opening) els.profExact.value = els.prof.value;
+    els.profExact.hidden = !opening;
+    els.prof.disabled = opening;
+    els.profExactToggle.textContent = opening ? '−' : '+';
+    els.profExactToggle.setAttribute('aria-pressed', String(opening));
+    els.profExactToggle.title = opening ? 'Back to the preset list' : 'Set an exact percentage';
+    if (opening) els.profExact.focus();
     recalc();
   });
 

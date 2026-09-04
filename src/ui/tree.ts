@@ -46,6 +46,13 @@ function nodeEl(node: TreeNode, expandedIds: ReadonlySet<number>, depth: number)
 
   row.appendChild(el('span', { className: 'node-name', text: node.name }));
 
+  // Batch recipes are part of the item's identity here — "Fine Lumber 10x" reads as one label.
+  // Kept out of `.node-name` so the name span stays the bare item name.
+  const batch = node.mode === 'craft' ? (node.outAmount ?? 1) : 1;
+  if (batch > 1) {
+    row.appendChild(el('span', { className: 'batch-tag', testid: 'batch-tag', text: `${int(batch)}x` }));
+  }
+
   if (node.mode === 'craft') {
     const crafts = node.crafts ?? 0;
     const laborEach = node.laborEach ?? 0;
@@ -59,13 +66,14 @@ function nodeEl(node: TreeNode, expandedIds: ReadonlySet<number>, depth: number)
       }),
     );
     // Batch recipes make 10 or 100 units at a time. Without this the materials below look
-    // inexplicable: one craft of Kraken's Might buys reagents for a hundred of them.
+    // inexplicable: one craft of Kraken's Might buys reagents for a hundred of them. The batch
+    // size itself is already on the name tag, so this line only says what it adds up to.
     if (out > 1) {
       row.appendChild(
         el('span', {
           className: 'node-yield',
           testid: 'node-yield',
-          text: `×${int(out)} per craft → ${int(produced)} for ${int(node.qty)} needed`,
+          text: `→ ${int(produced)} for ${int(node.qty)} needed`,
         }),
       );
     }
@@ -92,7 +100,9 @@ function nodeEl(node: TreeNode, expandedIds: ReadonlySet<number>, depth: number)
         attrs: { 'data-item-id': String(node.itemId), title: 'Recipe — this item can be crafted several ways' },
         children: node.recipeOptions.map((opt) =>
           el('option', {
-            text: `${opt.name} (×${int(opt.out)}, ${int(opt.labor)} labor)`,
+            text: opt.out > 1
+              ? `${opt.name} ${int(opt.out)}x (${int(opt.labor)} labor)`
+              : `${opt.name} (${int(opt.labor)} labor)`,
             attrs: { value: String(opt.id), ...(opt.selected ? { selected: '' } : {}) },
           }),
         ),

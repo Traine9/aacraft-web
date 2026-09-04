@@ -18,6 +18,7 @@ import {
   buildIndex,
   byNameThenId,
   calculate,
+  DEFAULT_PROF_PERCENT,
   itemName,
   type CalcOptions,
   type CalcResult,
@@ -67,7 +68,13 @@ export function mainPresetInputs(): { target: number; qty: number } {
 /** The gold-per-labor default baked into `index.html`; `boot.spec` pins the markup to it. */
 export const UI_GOLD_PER_LABOR = 0.3;
 
-/** `CalcOptions` with the one control the markup gives a default made optional. */
+/** The proficiency option preselected in `index.html` — the engine's own default, restated here. */
+export const UI_PROF_PERCENT = DEFAULT_PROF_PERCENT;
+
+/** The proficiency percentages `index.html` offers; `prof.spec` pins the markup to this list. */
+export const UI_PROF_STEPS = [0, 5, 10, 15, 20, 25, 30, 35, 40];
+
+/** `CalcOptions` with the controls the markup gives defaults made optional. */
 export type EngineInputs = Omit<CalcOptions, 'goldPerLabor'> & { goldPerLabor?: number };
 
 /** Run the engine exactly as `main.ts` does, filling in the page's default labor price. */

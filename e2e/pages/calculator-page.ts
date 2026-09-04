@@ -53,7 +53,9 @@ export class CalculatorPage {
   readonly searchOptions: Locator;
   readonly qtyInput: Locator;
   readonly goldPerLaborInput: Locator;
-  readonly profCheckbox: Locator;
+  readonly profSelect: Locator;
+  readonly profExact: Locator;
+  readonly profExactToggle: Locator;
   readonly updatedStamp: Locator;
   readonly presetButtons: Locator;
 
@@ -83,7 +85,9 @@ export class CalculatorPage {
     this.searchOptions = this.id('search-option');
     this.qtyInput = this.id('qty-input');
     this.goldPerLaborInput = this.id('gold-per-labor-input');
-    this.profCheckbox = this.id('prof-checkbox');
+    this.profSelect = this.id('prof-select');
+    this.profExact = this.id('prof-exact');
+    this.profExactToggle = this.id('prof-exact-toggle');
     this.updatedStamp = this.id('updated-stamp');
     this.presetButtons = this.id('preset-button');
 
@@ -159,8 +163,28 @@ export class CalculatorPage {
     await this.goldPerLaborInput.fill(String(value));
   }
 
-  async setProficiency(on: boolean): Promise<void> {
-    await this.profCheckbox.setChecked(on);
+  /** Pick a proficiency discount from the preset list (0, 5, … 40). */
+  async setProficiency(percent: number): Promise<void> {
+    await this.profSelect.selectOption(String(percent));
+  }
+
+  /** Percentages the preset list offers, in render order. */
+  async profOptionValues(): Promise<number[]> {
+    const values = await this.profSelect
+      .locator('option')
+      .evaluateAll((options) => options.map((o) => (o as HTMLOptionElement).value));
+    return values.map(Number);
+  }
+
+  /** Press "+" / "−": opens the exact-percent field over the list, or drops back to the list. */
+  async toggleExactProficiency(): Promise<void> {
+    await this.profExactToggle.click();
+  }
+
+  /** Open the exact field (if needed) and type a percentage the preset list does not offer. */
+  async setExactProficiency(percent: number): Promise<void> {
+    if (await this.profExact.isHidden()) await this.toggleExactProficiency();
+    await this.profExact.fill(String(percent));
   }
 
   presetButton(itemId: number): Locator {
@@ -211,6 +235,11 @@ export class CalculatorPage {
   /** The craft/buy buttons of a node. */
   nodeModeButton(itemId: number, mode: 'craft' | 'buy'): Locator {
     return this.rowPart(itemId, `node-mode-${mode}`);
+  }
+
+  /** "10x" beside a node's name — the batch size of the recipe it is crafted with. */
+  batchTag(itemId: number): Locator {
+    return this.rowPart(itemId, 'batch-tag');
   }
 
   /** The batch-yield line of a craft node — only rendered when one craft makes several units. */

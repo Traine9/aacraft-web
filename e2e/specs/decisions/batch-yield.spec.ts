@@ -21,14 +21,16 @@ test.describe('batch recipe yield', () => {
     await calc.expandAll();
   });
 
-  test('a batch craft node states its yield per craft and what that produces', async ({ calc }) => {
+  test('a batch craft node tags its name with the batch size and states what it adds up to', async ({
+    calc,
+  }) => {
     const produced = subject.crafts * subject.outAmount;
     await expect(
-      calc.nodeYield(subject.itemId),
+      calc.batchTag(subject.itemId),
       `${subject.name} is made ${subject.outAmount} at a time`,
-    ).toHaveText(
-      `×${subject.outAmount.toLocaleString('en-US')} per craft → ` +
-        `${produced.toLocaleString('en-US')} for ${subject.needed.toLocaleString('en-US')} needed`,
+    ).toHaveText(`${subject.outAmount.toLocaleString('en-US')}x`);
+    await expect(calc.nodeYield(subject.itemId)).toHaveText(
+      `→ ${produced.toLocaleString('en-US')} for ${subject.needed.toLocaleString('en-US')} needed`,
     );
   });
 
@@ -40,8 +42,9 @@ test.describe('batch recipe yield', () => {
     if (spare > 0) await expect(badge).toHaveText(`+${spare.toLocaleString('en-US')} spare`);
     else await expect(badge, 'a batch that comes out even wastes nothing').toHaveCount(0);
 
-    // The target is crafted one at a time in every preset, so it carries no yield line at all.
+    // The target is crafted one at a time in every preset, so it carries neither marker.
     await expect(calc.nodeYield(preset.itemId)).toHaveCount(0);
+    await expect(calc.batchTag(preset.itemId)).toHaveCount(0);
     await expect(calc.surplusBadge(preset.itemId)).toHaveCount(0);
   });
 });
