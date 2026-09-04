@@ -91,6 +91,10 @@ Single page, desktop-first, works standalone from `dist/` so it can be dropped i
   (itemId **35792**, qty 22). Note 7429 is the *recipe* id for that pack — item 7429 is an
   unrelated item (Blazing Sun Gauntlets); presets take item ids. Clicking a preset fills
   target+qty and recalcs.
+- Target heading: `<qty> × <item name> (#<item id>)`. When the target's own recipe is a batch the
+  name carries the batch size too — `1 × Alluvion Love 10x (#42045)` — because asking for one of
+  an item whose only recipe makes ten prices ten, and the heading is the only place naming it.
+  It follows the selected recipe, so switching a multi-recipe target changes it.
 - Craft tree: collapsible tree of the decision (craft nodes show crafts × labor; buy nodes show
   qty × price); per craftable node a craft/buy toggle wired to `modeOverride`. A craft node whose
   recipe is a batch (`outAmount > 1`) carries the batch size next to its name (`Fine Lumber 10x`)
