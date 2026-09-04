@@ -5,7 +5,7 @@
  * their clicks with one delegated listener on the container.
  */
 import type { TreeNode } from '../engine';
-import { badge, clear, el, gold, int, price, setFlags } from './dom';
+import { badge, batchLabel, clear, el, gold, int, price, setFlags } from './dom';
 
 /** Test id of the expand/collapse twisty — the anchor for the delegated click handler. */
 export const TREE_TOGGLE = 'tree-toggle';
@@ -14,11 +14,6 @@ export const MODE_BTN = 'mode-btn';
 /** Test id of the recipe `<select>` on multi-recipe craft nodes; carries `data-item-id`,
  *  option values are recipe ids. `main.ts` handles its `change` with a delegated listener. */
 export const RECIPE_SELECT = 'recipe-select';
-
-/** How a batch size is spelled — once, so the node's name tag and the recipe options agree. */
-function batchLabel(out: number): string {
-  return `${int(out)}x`;
-}
 
 /** @param expanded item ids of the open craft nodes — view state that survives a recalc. */
 export function renderTree(container: HTMLElement, root: TreeNode, expanded: ReadonlySet<number>): void {

@@ -75,3 +75,12 @@ export function price(n: number): string {
 export function priceInputValue(n: number): string {
   return String(Number(n.toFixed(4)));
 }
+
+/**
+ * How a batch size is spelled: `10 -> "10x"`. One definition, because it is appended to the item
+ * name in three places — the target heading, the tree node's tag, and the recipe options — and
+ * those must not drift apart.
+ */
+export function batchLabel(out: number): string {
+  return `${int(out)}x`;
+}

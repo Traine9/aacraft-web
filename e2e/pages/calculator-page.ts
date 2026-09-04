@@ -126,6 +126,14 @@ export class CalculatorPage {
     await this.clickPreset(itemId);
   }
 
+  /** Open an item that has no preset button, by searching for it and clicking its popup row. */
+  async openByName(name: string, itemId: number): Promise<void> {
+    await this.goto();
+    await this.searchFor(name);
+    await this.searchOption(itemId).click();
+    await expect(this.results).toBeVisible();
+  }
+
   // ----------------------------------------------------------------------------------- search
 
   /** Type into the item search, without waiting for anything (a no-match query opens no popup). */

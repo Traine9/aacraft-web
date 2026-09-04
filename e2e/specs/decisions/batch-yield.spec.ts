@@ -9,7 +9,7 @@
  * The subject node is picked from the engine at runtime by `lib/oracle.ts`.
  */
 import { test, expect } from '@lib/fixtures';
-import { firstBatchCraft, mainPreset, mainPresetInputs } from '@lib/oracle';
+import { batchTarget, firstBatchCraft, mainPreset, mainPresetInputs } from '@lib/oracle';
 
 const preset = mainPreset();
 const base = mainPresetInputs();
@@ -46,5 +46,22 @@ test.describe('batch recipe yield', () => {
     await expect(calc.nodeYield(preset.itemId)).toHaveCount(0);
     await expect(calc.batchTag(preset.itemId)).toHaveCount(0);
     await expect(calc.surplusBadge(preset.itemId)).toHaveCount(0);
+  });
+});
+
+test.describe('a batch-crafted target', () => {
+  const target = batchTarget();
+
+  test('carries its batch size in the heading, not just in the tree', async ({ calc }) => {
+    await calc.openByName(target.name, target.itemId);
+
+    // "1 × Alluvion Love 10x (#42045)" — asking for one when the recipe makes ten must say so up
+    // top, where the preset heading is the only thing naming the item.
+    await expect(calc.targetLine).toHaveText(
+      `1 × ${target.name} ${target.outAmount.toLocaleString('en-US')}x (#${target.itemId})`,
+    );
+    await expect(calc.batchTag(target.itemId)).toHaveText(
+      `${target.outAmount.toLocaleString('en-US')}x`,
+    );
   });
 });

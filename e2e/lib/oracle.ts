@@ -188,6 +188,29 @@ export function firstBatchCraft(base: EngineInputs): BatchCraft {
   return found;
 }
 
+/**
+ * A TARGET whose own default recipe is a batch — one craft yields several, so asking for 1 gets
+ * you 10 (Alluvion Love, whose only recipe makes 10, is the case that prompted this). The heading
+ * must say so; `mainPreset` cannot cover it, being a x1 craft.
+ *
+ * Picked from the data by lowest item id among the searchable ones, so it is stable across
+ * `data.json` refreshes without naming an item.
+ */
+export function batchTarget(): Subject & { outAmount: number } {
+  const index = craftIndex();
+  for (const itemId of [...index.recipesByProduct.keys()].sort((a, b) => a - b)) {
+    const tree = expected({ target: itemId, qty: 1 }).tree;
+    if (tree.mode !== 'craft' || (tree.outAmount ?? 1) <= 1) continue;
+    const name = itemName(index, itemId);
+    // The spec reaches it through the search popup, which caps its rows: the item has to be
+    // findable by its own full name for the click to land.
+    if (searchHits(name).slice(0, SEARCH_MAX_ROWS).some((hit) => hit.id === itemId)) {
+      return { itemId, name, outAmount: tree.outAmount ?? 1 };
+    }
+  }
+  throw new Error('no batch-crafted target in this data — the heading spec has no subject');
+}
+
 /** A multi-recipe craft node plus a non-default recipe to switch it to. */
 export interface RecipeChoice extends Subject {
   defaultRecipeId: number;
